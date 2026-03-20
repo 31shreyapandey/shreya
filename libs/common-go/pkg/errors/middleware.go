@@ -6,19 +6,23 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"runtime"
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	log "github.com/sirupsen/logrus"
 )
 
 func NewErrorMiddleware(defaultErrorHandler func(ctx *gin.Context, err error) ErrorResponse) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		ctx.Next()
+
+		// Do not override the response if it has already been written
+		if ctx.Writer.Written() {
+			return
+		}
 
 		errs := ctx.Errors
 		if len(errs) > 0 {
@@ -89,23 +93,59 @@ func NewErrorMiddleware(defaultErrorHandler func(ctx *gin.Context, err error) Er
 					Path:       ctx.Request.URL.Path,
 					Method:     ctx.Request.Method,
 				}
+			case *RequestTimeoutError:
+				errorResponse = ErrorResponse{
+					StatusCode: http.StatusRequestTimeout,
+					Message:    err.Err.Error(),
+					Code:       "REQUEST_TIMEOUT",
+					Timestamp:  time.Now(),
+					Path:       ctx.Request.URL.Path,
+					Method:     ctx.Request.Method,
+				}
+			case *GoneError:
+				errorResponse = ErrorResponse{
+					StatusCode: http.StatusGone,
+					Message:    err.Err.Error(),
+					Code:       "GONE",
+					Timestamp:  time.Now(),
+					Path:       ctx.Request.URL.Path,
+					Method:     ctx.Request.Method,
+				}
+			case *InternalServerError:
+				errorResponse = ErrorResponse{
+					StatusCode: http.StatusInternalServerError,
+					Message:    err.Err.Error(),
+					Code:       "INTERNAL_SERVER_ERROR",
+					Timestamp:  time.Now(),
+					Path:       ctx.Request.URL.Path,
+					Method:     ctx.Request.Method,
+				}
+			case *UnprocessableEntityError:
+				errorResponse = ErrorResponse{
+					StatusCode: http.StatusUnprocessableEntity,
+					Message:    err.Err.Error(),
+					Code:       "UNPROCESSABLE_ENTITY",
+					Timestamp:  time.Now(),
+					Path:       ctx.Request.URL.Path,
+					Method:     ctx.Request.Method,
+				}
 			default:
 				errorResponse = defaultErrorHandler(ctx, err)
 			}
 
 			if errorResponse.StatusCode == http.StatusInternalServerError {
-				log.WithError(err).WithFields(log.Fields{
-					"path":   ctx.Request.URL.Path,
-					"method": ctx.Request.Method,
-					"error":  errorResponse.Message,
-				}).Error("Internal Server Error")
+				slog.Error("Internal Server Error",
+					"path", ctx.Request.URL.Path,
+					"method", ctx.Request.Method,
+					"error", errorResponse.Message,
+				)
 			} else {
-				log.WithFields(log.Fields{
-					"method": ctx.Request.Method,
-					"URI":    ctx.Request.URL.Path,
-					"status": errorResponse.StatusCode,
-					"error":  errorResponse.Message,
-				}).Error("API ERROR")
+				slog.Error("API ERROR",
+					"method", ctx.Request.Method,
+					"URI", ctx.Request.URL.Path,
+					"status", errorResponse.StatusCode,
+					"error", errorResponse.Message,
+				)
 			}
 
 			// Set explicit content type header
@@ -138,11 +178,11 @@ func Recovery() gin.HandlerFunc {
 					return
 				}
 
-				log.Errorf("panic recovered: %v", err)
+				slog.Error("panic recovered", "panic", err)
 				// print caller stack
 				buf := make([]byte, maxStackTraceSize)
 				stackSize := runtime.Stack(buf, false)
-				log.Errorf("stack trace: %s", string(buf[:stackSize]))
+				slog.Error("stack trace", "stack", string(buf[:stackSize]))
 
 				if ctx.Writer.Written() {
 					return

@@ -4,6 +4,7 @@
 package controllers
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/daytonaio/runner/pkg/api/dto"
@@ -39,11 +40,14 @@ func Create(ctx *gin.Context) {
 		return
 	}
 
-	runner := runner.GetInstance(nil)
+	runner, err := runner.GetInstance(nil)
+	if err != nil {
+		ctx.Error(err)
+		return
+	}
 
 	_, daemonVersion, err := runner.Docker.Create(ctx.Request.Context(), createSandboxDto)
 	if err != nil {
-		runner.StatesCache.SetSandboxState(ctx, createSandboxDto.Id, enums.SandboxStateError)
 		common.ContainerOperationCount.WithLabelValues("create", string(common.PrometheusOperationStatusFailure)).Inc()
 		ctx.Error(err)
 		return
@@ -75,11 +79,14 @@ func Create(ctx *gin.Context) {
 func Destroy(ctx *gin.Context) {
 	sandboxId := ctx.Param("sandboxId")
 
-	runner := runner.GetInstance(nil)
-
-	err := runner.Docker.Destroy(ctx.Request.Context(), sandboxId)
+	runner, err := runner.GetInstance(nil)
 	if err != nil {
-		runner.StatesCache.SetSandboxState(ctx, sandboxId, enums.SandboxStateError)
+		ctx.Error(err)
+		return
+	}
+
+	err = runner.Docker.Destroy(ctx.Request.Context(), sandboxId)
+	if err != nil {
 		common.ContainerOperationCount.WithLabelValues("destroy", string(common.PrometheusOperationStatusFailure)).Inc()
 		ctx.Error(err)
 		return
@@ -107,26 +114,36 @@ func Destroy(ctx *gin.Context) {
 //	@Router			/sandboxes/{sandboxId}/backup [post]
 //
 //	@id				CreateBackup
-func CreateBackup(ctx *gin.Context) {
-	sandboxId := ctx.Param("sandboxId")
+func CreateBackup(logger *slog.Logger) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		sandboxId := ctx.Param("sandboxId")
 
-	var createBackupDTO dto.CreateBackupDTO
-	err := ctx.ShouldBindJSON(&createBackupDTO)
-	if err != nil {
-		ctx.Error(common_errors.NewInvalidBodyRequestError(err))
-		return
+		var createBackupDTO dto.CreateBackupDTO
+		err := ctx.ShouldBindJSON(&createBackupDTO)
+		if err != nil {
+			ctx.Error(common_errors.NewInvalidBodyRequestError(err))
+			return
+		}
+
+		runner, err := runner.GetInstance(nil)
+		if err != nil {
+			ctx.Error(err)
+			return
+		}
+
+		err = runner.Docker.CreateBackupAsync(ctx.Request.Context(), sandboxId, createBackupDTO)
+		if err != nil {
+			setErr := runner.BackupInfoCache.SetBackupState(ctx.Request.Context(), sandboxId, enums.BackupStateFailed, err)
+			if setErr != nil {
+				logger.DebugContext(ctx.Request.Context(), "failed to update backup info", "error", setErr)
+			}
+
+			ctx.Error(err)
+			return
+		}
+
+		ctx.JSON(http.StatusCreated, "Backup started")
 	}
-
-	runner := runner.GetInstance(nil)
-
-	err = runner.Docker.CreateBackupAsync(ctx.Request.Context(), sandboxId, createBackupDTO)
-	if err != nil {
-		runner.StatesCache.SetBackupState(ctx, sandboxId, enums.BackupStateFailed, err)
-		ctx.Error(err)
-		return
-	}
-
-	ctx.JSON(http.StatusCreated, "Backup started")
 }
 
 // Resize 			godoc
@@ -156,14 +173,20 @@ func Resize(ctx *gin.Context) {
 
 	sandboxId := ctx.Param("sandboxId")
 
-	runner := runner.GetInstance(nil)
-
-	err = runner.Docker.Resize(ctx.Request.Context(), sandboxId, resizeDto)
+	runner, err := runner.GetInstance(nil)
 	if err != nil {
-		runner.StatesCache.SetSandboxState(ctx, sandboxId, enums.SandboxStateError)
 		ctx.Error(err)
 		return
 	}
+
+	err = runner.Docker.Resize(ctx.Request.Context(), sandboxId, resizeDto)
+	if err != nil {
+		common.ContainerOperationCount.WithLabelValues("resize", string(common.PrometheusOperationStatusFailure)).Inc()
+		ctx.Error(err)
+		return
+	}
+
+	common.ContainerOperationCount.WithLabelValues("resize", string(common.PrometheusOperationStatusSuccess)).Inc()
 
 	ctx.JSON(http.StatusOK, "Sandbox resized")
 }
@@ -194,7 +217,11 @@ func UpdateNetworkSettings(ctx *gin.Context) {
 	}
 
 	sandboxId := ctx.Param("sandboxId")
-	runner := runner.GetInstance(nil)
+	runner, err := runner.GetInstance(nil)
+	if err != nil {
+		ctx.Error(err)
+		return
+	}
 
 	err = runner.Docker.UpdateNetworkSettings(ctx.Request.Context(), sandboxId, updateNetworkSettingsDto)
 	if err != nil {
@@ -246,34 +273,42 @@ func GetNetworkSettings(ctx *gin.Context) {
 //	@Summary		Start sandbox
 //	@Description	Start sandbox
 //	@Produce		json
-//	@Param			sandboxId	path	string	true	"Sandbox ID"
-//	@Param			metadata	body	object	false	"Metadata"
-//	@Produce		json
-//	@Success		200	{object}	dto.StartSandboxResponse	"Sandbox started"
-//	@Failure		400	{object}	common_errors.ErrorResponse
-//	@Failure		401	{object}	common_errors.ErrorResponse
-//	@Failure		404	{object}	common_errors.ErrorResponse
-//	@Failure		409	{object}	common_errors.ErrorResponse
-//	@Failure		500	{object}	common_errors.ErrorResponse
+//	@Param			sandboxId	path		string						true	"Sandbox ID"
+//	@Param			metadata	body		object						false	"Metadata"
+//	@Param			token		query		string						false	"Auth token"
+//	@Success		200			{object}	dto.StartSandboxResponse	"Sandbox started"
+//	@Failure		400			{object}	common_errors.ErrorResponse
+//	@Failure		401			{object}	common_errors.ErrorResponse
+//	@Failure		404			{object}	common_errors.ErrorResponse
+//	@Failure		409			{object}	common_errors.ErrorResponse
+//	@Failure		500			{object}	common_errors.ErrorResponse
 //	@Router			/sandboxes/{sandboxId}/start [post]
 //
 //	@id				Start
 func Start(ctx *gin.Context) {
 	sandboxId := ctx.Param("sandboxId")
 
-	runner := runner.GetInstance(nil)
+	runner, err := runner.GetInstance(nil)
+	if err != nil {
+		ctx.Error(err)
+		return
+	}
 
 	var metadata map[string]string
-	err := ctx.ShouldBindJSON(&metadata)
+	err = ctx.ShouldBindJSON(&metadata)
 	if err != nil {
 		ctx.Error(common_errors.NewInvalidBodyRequestError(err))
 		return
 	}
 
-	daemonVersion, err := runner.Docker.Start(ctx.Request.Context(), sandboxId, metadata)
+	var authToken *string
+	tokenQuery := ctx.Query("token")
+	if tokenQuery != "" {
+		authToken = &tokenQuery
+	}
 
+	_, daemonVersion, err := runner.Docker.Start(ctx.Request.Context(), sandboxId, authToken, metadata)
 	if err != nil {
-		runner.StatesCache.SetSandboxState(ctx, sandboxId, enums.SandboxStateError)
 		ctx.Error(err)
 		return
 	}
@@ -302,11 +337,14 @@ func Start(ctx *gin.Context) {
 func Stop(ctx *gin.Context) {
 	sandboxId := ctx.Param("sandboxId")
 
-	runner := runner.GetInstance(nil)
-
-	err := runner.Docker.Stop(ctx.Request.Context(), sandboxId)
+	runner, err := runner.GetInstance(nil)
 	if err != nil {
-		runner.StatesCache.SetSandboxState(ctx, sandboxId, enums.SandboxStateError)
+		ctx.Error(err)
+		return
+	}
+
+	err = runner.Docker.Stop(ctx.Request.Context(), sandboxId)
+	if err != nil {
 		ctx.Error(err)
 		return
 	}
@@ -333,9 +371,17 @@ func Stop(ctx *gin.Context) {
 func Info(ctx *gin.Context) {
 	sandboxId := ctx.Param("sandboxId")
 
-	runner := runner.GetInstance(nil)
+	runner, err := runner.GetInstance(nil)
+	if err != nil {
+		ctx.Error(err)
+		return
+	}
 
-	info := runner.SandboxService.GetSandboxStatesInfo(ctx.Request.Context(), sandboxId)
+	info, err := runner.SandboxService.GetSandboxInfo(ctx.Request.Context(), sandboxId)
+	if err != nil {
+		ctx.Error(err)
+		return
+	}
 
 	var daemonVersion *string
 	if info.SandboxState == enums.SandboxStateStarted {
@@ -387,7 +433,11 @@ func Recover(ctx *gin.Context) {
 	}
 
 	sandboxId := ctx.Param("sandboxId")
-	runner := runner.GetInstance(nil)
+	runner, err := runner.GetInstance(nil)
+	if err != nil {
+		ctx.Error(err)
+		return
+	}
 
 	err = runner.Docker.RecoverSandbox(ctx.Request.Context(), sandboxId, recoverDto)
 	if err != nil {
@@ -396,38 +446,6 @@ func Recover(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, "Sandbox recovered")
-}
-
-// RemoveDestroyed godoc
-//
-//	@Tags			sandbox
-//	@Summary		Remove a destroyed sandbox
-//	@Description	Remove a sandbox that has been previously destroyed
-//	@Produce		json
-//	@Param			sandboxId	path		string	true	"Sandbox ID"
-//	@Success		200			{string}	string	"Sandbox removed"
-//	@Failure		400			{object}	common_errors.ErrorResponse
-//	@Failure		401			{object}	common_errors.ErrorResponse
-//	@Failure		404			{object}	common_errors.ErrorResponse
-//	@Failure		409			{object}	common_errors.ErrorResponse
-//	@Failure		500			{object}	common_errors.ErrorResponse
-//	@Router			/sandboxes/{sandboxId} [delete]
-//
-//	@id				RemoveDestroyed
-func RemoveDestroyed(ctx *gin.Context) {
-	sandboxId := ctx.Param("sandboxId")
-
-	runner := runner.GetInstance(nil)
-
-	err := runner.SandboxService.RemoveDestroyedSandbox(ctx.Request.Context(), sandboxId)
-	if err != nil {
-		if !common_errors.IsNotFoundError(err) {
-			ctx.Error(err)
-			return
-		}
-	}
-
-	ctx.JSON(http.StatusOK, "Sandbox removed")
 }
 
 // IsRecoverable godoc

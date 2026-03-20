@@ -41,6 +41,7 @@ import { CreateSnapshotDto } from '../dto/create-snapshot.dto'
 import { SnapshotDto } from '../dto/snapshot.dto'
 import { PaginatedSnapshotsDto } from '../dto/paginated-snapshots.dto'
 import { SnapshotAccessGuard } from '../guards/snapshot-access.guard'
+import { SnapshotReadAccessGuard } from '../guards/snapshot-read-access.guard'
 import { CustomHeaders } from '../../common/constants/header.constants'
 import { AuthContext } from '../../common/decorators/auth-context.decorator'
 import { OrganizationAuthContext } from '../../common/interfaces/auth-context.interface'
@@ -178,19 +179,12 @@ export class SnapshotController {
     status: 404,
     description: 'Snapshot not found',
   })
-  @UseGuards(SnapshotAccessGuard)
+  @UseGuards(SnapshotReadAccessGuard)
   async getSnapshot(
     @Param('id') snapshotIdOrName: string,
     @AuthContext() authContext: OrganizationAuthContext,
   ): Promise<SnapshotDto> {
-    let snapshot: Snapshot
-    try {
-      // Try to get by ID
-      snapshot = await this.snapshotService.getSnapshot(snapshotIdOrName)
-    } catch {
-      // If not found by ID, try by name
-      snapshot = await this.snapshotService.getSnapshotByName(snapshotIdOrName, authContext.organizationId)
-    }
+    const snapshot = await this.snapshotService.getSnapshotWithRegions(snapshotIdOrName, authContext.organizationId)
     return SnapshotDto.fromSnapshot(snapshot)
   }
 
@@ -333,10 +327,7 @@ export class SnapshotController {
       snapshot = await this.snapshotService.getSnapshot(snapshotId)
     }
 
-    const runner = await this.runnerService.findOne(snapshot.initialRunnerId)
-    if (!runner) {
-      throw new NotFoundException(`Build runner for snapshot ${snapshotId} not found`)
-    }
+    const runner = await this.runnerService.findOneOrFail(snapshot.initialRunnerId)
 
     if (!runner.apiUrl) {
       throw new NotFoundException(`Build runner for snapshot ${snapshotId} has no API URL`)

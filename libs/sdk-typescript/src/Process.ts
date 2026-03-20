@@ -12,6 +12,7 @@ import {
   SessionExecuteResponse as ApiSessionExecuteResponse,
   PtyCreateRequest,
   PtySessionInfo,
+  SessionSendInputRequest,
 } from '@daytonaio/toolbox-api-client'
 import { SandboxCodeToolbox } from './Sandbox'
 import { ExecuteResponse } from './types/ExecuteResponse'
@@ -21,6 +22,7 @@ import { Buffer } from 'buffer'
 import { PtyHandle } from './PtyHandle'
 import { PtyCreateOptions, PtyConnectOptions } from './types/Pty'
 import { createSandboxWebSocket } from './utils/WebSocket'
+import { WithInstrumentation } from './utils/otel.decorator'
 
 // 3-byte multiplexing markers inserted by the shell labelers
 export const STDOUT_PREFIX_BYTES = new Uint8Array([0x01, 0x01, 0x01])
@@ -63,7 +65,6 @@ export class Process {
     private readonly codeToolbox: SandboxCodeToolbox,
     private readonly apiClient: ProcessApi,
     private readonly getPreviewToken: () => Promise<string>,
-    private readonly ensureToolboxUrl: () => Promise<void>,
   ) {}
 
   /**
@@ -91,6 +92,7 @@ export class Process {
    * // Command with timeout
    * const result = await process.executeCommand('sleep 10', undefined, 5);
    */
+  @WithInstrumentation()
   public async executeCommand(
     command: string,
     cwd?: string,
@@ -188,6 +190,7 @@ export class Process {
    *   }
    * }
    */
+  @WithInstrumentation()
   public async codeRun(code: string, params?: CodeRunParams, timeout?: number): Promise<ExecuteResponse> {
     const runCommand = this.codeToolbox.getRunCommand(code, params)
     return this.executeCommand(runCommand, undefined, params?.env, timeout)
@@ -211,6 +214,7 @@ export class Process {
    * // Do work...
    * await process.deleteSession(sessionId);
    */
+  @WithInstrumentation()
   public async createSession(sessionId: string): Promise<void> {
     await this.apiClient.createSession({
       sessionId,
@@ -237,6 +241,24 @@ export class Process {
   }
 
   /**
+   * Get the sandbox entrypoint session
+   *
+   * @returns {Promise<Session>} Entrypoint session information including:
+   *                            - sessionId: The entrypoint session's unique identifier
+   *                            - commands: List of commands executed in the entrypoint session
+   *
+   * @example
+   * const session = await process.getEntrypointSession();
+   * session.commands.forEach(cmd => {
+   *   console.log(`Command: ${cmd.command}`);
+   * });
+   */
+  public async getEntrypointSession(): Promise<Session> {
+    const response = await this.apiClient.getEntrypointSession()
+    return response.data
+  }
+
+  /**
    * Gets information about a specific command executed in a session.
    *
    * @param {string} sessionId - Unique identifier of the session
@@ -252,6 +274,7 @@ export class Process {
    *   console.log(`Command ${cmd.command} completed successfully`);
    * }
    */
+  @WithInstrumentation()
   public async getSessionCommand(sessionId: string, commandId: string): Promise<Command> {
     const response = await this.apiClient.getSessionCommand(sessionId, commandId)
     return response.data
@@ -264,6 +287,7 @@ export class Process {
    * @param {SessionExecuteRequest} req - Command execution request containing:
    *                                     - command: The command to execute
    *                                     - runAsync: Whether to execute asynchronously
+   *                                     - suppressInputEcho: Whether to suppress input echo. Default is `false`.
    * @param {number} timeout - Timeout in seconds
    * @returns {Promise<SessionExecuteResponse>} Command execution results containing:
    *                                           - cmdId: Unique identifier for the executed command
@@ -288,6 +312,7 @@ export class Process {
    * console.log('[STDOUT]:', result.stdout);
    * console.log('[STDERR]:', result.stderr);
    */
+  @WithInstrumentation()
   public async executeSessionCommand(
     sessionId: string,
     req: SessionExecuteRequest,
@@ -349,6 +374,8 @@ export class Process {
     onStdout: (chunk: string) => void,
     onStderr: (chunk: string) => void,
   ): Promise<void>
+
+  @WithInstrumentation()
   public async getSessionCommandLogs(
     sessionId: string,
     commandId: string,
@@ -376,12 +403,83 @@ export class Process {
       }
     }
 
-    await this.ensureToolboxUrl()
     const url = `${this.clientConfig.basePath.replace(/^http/, 'ws')}/process/session/${sessionId}/command/${commandId}/logs?follow=true`
 
     const ws = await createSandboxWebSocket(url, this.clientConfig.baseOptions?.headers || {}, this.getPreviewToken)
 
     await stdDemuxStream(ws, onStdout, onStderr)
+  }
+
+  /**
+   * Get the logs for the sandbox entrypoint session.
+   *
+   * @returns {Promise<SessionCommandLogsResponse>} Command logs containing: output (combined stdout and stderr), stdout and stderr
+   *
+   * @example
+   * const logs = await process.getEntrypointLogs();
+   * console.log('[STDOUT]:', logs.stdout);
+   * console.log('[STDERR]:', logs.stderr);
+   */
+  public async getEntrypointLogs(): Promise<SessionCommandLogsResponse>
+  /**
+   * Asynchronously retrieve and process the logs for the entrypoint session as they become available.
+   *
+   * @param {function} onStdout - Callback function to handle stdout log chunks
+   * @param {function} onStderr - Callback function to handle stderr log chunks
+   * @returns {Promise<void>}
+   *
+   * @example
+   * const logs = await process.getEntrypointLogs((chunk) => {
+   *   console.log('[STDOUT]:', chunk);
+   * }, (chunk) => {
+   *   console.log('[STDERR]:', chunk);
+   * });
+   */
+  public async getEntrypointLogs(onStdout: (chunk: string) => void, onStderr: (chunk: string) => void): Promise<void>
+
+  @WithInstrumentation()
+  public async getEntrypointLogs(
+    onStdout?: (chunk: string) => void,
+    onStderr?: (chunk: string) => void,
+  ): Promise<SessionCommandLogsResponse | void> {
+    if (!onStdout && !onStderr) {
+      const response = await this.apiClient.getEntrypointLogs()
+
+      // Parse the response data if it's available
+      if (response.data) {
+        // Convert string to bytes for demuxing
+        const outputBytes = new TextEncoder().encode(response.data || '')
+        const demuxedCommandLogs = parseSessionCommandLogs(outputBytes)
+
+        return {
+          output: response.data,
+          stdout: demuxedCommandLogs.stdout,
+          stderr: demuxedCommandLogs.stderr,
+        }
+      }
+
+      return {
+        output: response.data,
+      }
+    }
+
+    const url = `${this.clientConfig.basePath.replace(/^http/, 'ws')}/process/session/entrypoint/logs?follow=true`
+
+    const ws = await createSandboxWebSocket(url, this.clientConfig.baseOptions?.headers || {}, this.getPreviewToken)
+
+    await stdDemuxStream(ws, onStdout, onStderr)
+  }
+
+  /**
+   * Sends input data to a command executed in a session.
+   *
+   * @param {string} sessionId - Unique identifier of the session
+   * @param {string} commandId - Unique identifier of the command
+   * @param {string} data - Input data to send
+   * @returns {Promise<void>}
+   */
+  public async sendSessionCommandInput(sessionId: string, commandId: string, data: string): Promise<void> {
+    await this.apiClient.sendInput(sessionId, commandId, { data })
   }
 
   /**
@@ -398,6 +496,7 @@ export class Process {
    *   });
    * });
    */
+  @WithInstrumentation()
   public async listSessions(): Promise<Session[]> {
     const response = await this.apiClient.listSessions()
     return response.data
@@ -413,6 +512,7 @@ export class Process {
    * // Clean up a completed session
    * await process.deleteSession('my-session');
    */
+  @WithInstrumentation()
   public async deleteSession(sessionId: string): Promise<void> {
     await this.apiClient.deleteSession(sessionId)
   }
@@ -456,6 +556,7 @@ export class Process {
    * // Clean up
    * await ptyHandle.disconnect();
    */
+  @WithInstrumentation()
   public async createPty(options?: PtyCreateOptions & PtyConnectOptions): Promise<PtyHandle> {
     const request: PtyCreateRequest = {
       id: options.id,
@@ -506,9 +607,8 @@ export class Process {
    * // Clean up
    * await handle.disconnect();
    */
+  @WithInstrumentation()
   public async connectPty(sessionId: string, options?: PtyConnectOptions): Promise<PtyHandle> {
-    // Get preview link for WebSocket connection
-    await this.ensureToolboxUrl()
     const url = `${this.clientConfig.basePath.replace(/^http/, 'ws')}/process/pty/${sessionId}/connect`
 
     const ws = await createSandboxWebSocket(url, this.clientConfig.baseOptions?.headers || {}, this.getPreviewToken)
@@ -544,6 +644,7 @@ export class Process {
    *   console.log('---');
    * }
    */
+  @WithInstrumentation()
   public async listPtySessions(): Promise<PtySessionInfo[]> {
     return (await this.apiClient.listPtySessions()).data.sessions
   }
@@ -572,6 +673,7 @@ export class Process {
    *   console.log(`Process ID: ${session.processId}`);
    * }
    */
+  @WithInstrumentation()
   public async getPtySessionInfo(sessionId: string): Promise<PtySessionInfo> {
     return (await this.apiClient.getPtySession(sessionId)).data
   }
@@ -601,6 +703,7 @@ export class Process {
    *   console.log('Session has been completely removed');
    * }
    */
+  @WithInstrumentation()
   public async killPtySession(sessionId: string): Promise<void> {
     await this.apiClient.deletePtySession(sessionId)
   }
@@ -630,6 +733,7 @@ export class Process {
    * // You can also use the PtyHandle's resize method
    * await ptyHandle.resize(150, 40); // cols, rows
    */
+  @WithInstrumentation()
   public async resizePtySession(sessionId: string, cols: number, rows: number): Promise<PtySessionInfo> {
     return (await this.apiClient.resizePtySession(sessionId, { cols, rows })).data
   }

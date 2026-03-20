@@ -10,20 +10,16 @@ import (
 	"io"
 	"strings"
 
+	"github.com/daytonaio/common-go/pkg/log"
 	"github.com/daytonaio/common-go/pkg/timer"
-	"github.com/daytonaio/runner/internal/constants"
-	"github.com/daytonaio/runner/internal/util"
 	"github.com/daytonaio/runner/pkg/api/dto"
-	"github.com/daytonaio/runner/pkg/models/enums"
 
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/pkg/jsonmessage"
-
-	log "github.com/sirupsen/logrus"
 )
 
-func (d *DockerClient) PullImage(ctx context.Context, imageName string, reg *dto.RegistryDTO) error {
+func (d *DockerClient) PullImage(ctx context.Context, imageName string, reg *dto.RegistryDTO) (*image.InspectResponse, error) {
 	defer timer.Timer()()
 
 	tag := "latest"
@@ -33,42 +29,36 @@ func (d *DockerClient) PullImage(ctx context.Context, imageName string, reg *dto
 	}
 
 	if tag != "latest" {
-		exists, err := d.ImageExists(ctx, imageName, true)
-		if err != nil {
-			return err
-		}
-
-		if exists {
-			return nil
+		inspect, err := d.apiClient.ImageInspect(ctx, imageName)
+		if err == nil {
+			return &inspect, nil
 		}
 	}
 
-	log.Infof("Pulling image %s...", imageName)
-
-	sandboxIdValue := ctx.Value(constants.ID_KEY)
-
-	if sandboxIdValue != nil {
-		sandboxId := sandboxIdValue.(string)
-		d.statesCache.SetSandboxState(ctx, sandboxId, enums.SandboxStatePullingSnapshot)
-	}
+	d.logger.InfoContext(ctx, "Pulling image", "imageName", imageName)
 
 	responseBody, err := d.apiClient.ImagePull(ctx, imageName, image.PullOptions{
 		RegistryAuth: getRegistryAuth(reg),
 		Platform:     "linux/amd64",
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer responseBody.Close()
 
-	err = jsonmessage.DisplayJSONMessagesStream(responseBody, io.Writer(&util.DebugLogWriter{}), 0, true, nil)
+	err = jsonmessage.DisplayJSONMessagesStream(responseBody, io.Writer(&log.DebugLogWriter{}), 0, true, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	log.Infof("Image %s pulled successfully", imageName)
+	d.logger.InfoContext(ctx, "Image pulled successfully", "imageName", imageName)
 
-	return nil
+	inspect, err := d.apiClient.ImageInspect(ctx, imageName)
+	if err != nil {
+		return nil, err
+	}
+
+	return &inspect, nil
 }
 
 func getRegistryAuth(reg *dto.RegistryDTO) string {

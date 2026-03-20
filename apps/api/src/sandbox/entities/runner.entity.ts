@@ -6,6 +6,7 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm'
 import { SandboxClass } from '../enums/sandbox-class.enum'
 import { RunnerState } from '../enums/runner-state.enum'
+import { RunnerServiceInfo } from '../common/runner-service-info'
 
 @Entity()
 @Unique(['region', 'name'])
@@ -92,16 +93,19 @@ export class Runner {
   currentDiskUsagePercentage: number
 
   @Column({
+    type: 'float',
     default: 0,
   })
   currentAllocatedCpu: number
 
   @Column({
+    type: 'float',
     default: 0,
   })
   currentAllocatedMemoryGiB: number
 
   @Column({
+    type: 'float',
     default: 0,
   })
   currentAllocatedDiskGiB: number
@@ -155,6 +159,18 @@ export class Runner {
     default: false,
   })
   unschedulable: boolean
+
+  @Column({
+    default: false,
+  })
+  draining: boolean
+
+  @Column({
+    type: 'jsonb',
+    nullable: true,
+    default: null,
+  })
+  serviceHealth: RunnerServiceInfo[] | null
 
   @CreateDateColumn({
     type: 'timestamp with time zone',

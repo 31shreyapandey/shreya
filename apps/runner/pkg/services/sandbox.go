@@ -5,56 +5,53 @@ package services
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/daytonaio/runner/pkg/cache"
 	"github.com/daytonaio/runner/pkg/docker"
 	"github.com/daytonaio/runner/pkg/models"
 	"github.com/daytonaio/runner/pkg/models/enums"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type SandboxService struct {
-	statesCache *cache.StatesCache
-	docker      *docker.DockerClient
+	backupInfoCache *cache.BackupInfoCache
+	docker          *docker.DockerClient
+	log             *slog.Logger
 }
 
-func NewSandboxService(statesCache *cache.StatesCache, docker *docker.DockerClient) *SandboxService {
+func NewSandboxService(logger *slog.Logger, backupInfoCache *cache.BackupInfoCache, docker *docker.DockerClient) *SandboxService {
 	return &SandboxService{
-		statesCache: statesCache,
-		docker:      docker,
+		log:             logger.With(slog.String("component", "sandbox_service")),
+		backupInfoCache: backupInfoCache,
+		docker:          docker,
 	}
 }
 
-func (s *SandboxService) GetSandboxStatesInfo(ctx context.Context, sandboxId string) *models.CachedStates {
-	sandboxState, err := s.docker.DeduceSandboxState(ctx, sandboxId)
+func (s *SandboxService) GetSandboxInfo(ctx context.Context, sandboxId string) (*models.SandboxInfo, error) {
+	sandboxState, err := s.docker.GetSandboxState(ctx, sandboxId)
 	if err != nil {
-		log.Warnf("Failed to deduce sandbox %s state: %v", sandboxId, err)
+		s.log.Warn("Failed to get sandbox state", "sandboxId", sandboxId, "error", err)
+		return nil, err
 	}
 
-	s.statesCache.SetSandboxState(ctx, sandboxId, sandboxState)
-
-	data, err := s.statesCache.Get(ctx, sandboxId)
+	backupInfo, err := s.backupInfoCache.Get(ctx, sandboxId)
 	if err != nil {
-		return &models.CachedStates{
-			SandboxState:      enums.SandboxStateUnknown,
-			BackupState:       enums.BackupStateNone,
-			BackupErrorReason: nil,
-		}
+		return &models.SandboxInfo{
+			SandboxState: sandboxState,
+			BackupState:  enums.BackupStateNone,
+		}, nil
 	}
 
-	return data
-}
-
-func (s *SandboxService) RemoveDestroyedSandbox(ctx context.Context, sandboxId string) error {
-	info := s.GetSandboxStatesInfo(ctx, sandboxId)
-
-	if info != nil && info.SandboxState != enums.SandboxStateDestroyed && info.SandboxState != enums.SandboxStateDestroying {
-		err := s.docker.Destroy(ctx, sandboxId)
-		if err != nil {
-			return err
-		}
+	sandboxInfo := &models.SandboxInfo{
+		SandboxState: sandboxState,
+		BackupState:  backupInfo.State,
 	}
 
-	return nil
+	var backupErrReason string
+	if backupInfo.Error != nil {
+		backupErrReason = backupInfo.Error.Error()
+		sandboxInfo.BackupErrorReason = &backupErrReason
+	}
+
+	return sandboxInfo, nil
 }

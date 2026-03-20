@@ -4,70 +4,111 @@
 package docker
 
 import (
-	"io"
+	"context"
+	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/daytonaio/common-go/pkg/utils"
 	"github.com/daytonaio/runner/pkg/cache"
 	"github.com/daytonaio/runner/pkg/netrules"
+	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/client"
-	log "github.com/sirupsen/logrus"
 )
 
 type DockerClientConfig struct {
-	ApiClient                client.APIClient
-	StatesCache              *cache.StatesCache
-	LogWriter                io.Writer
-	AWSRegion                string
-	AWSEndpointUrl           string
-	AWSAccessKeyId           string
-	AWSSecretAccessKey       string
-	DaemonPath               string
-	ComputerUsePluginPath    string
-	NetRulesManager          *netrules.NetRulesManager
-	ResourceLimitsDisabled   bool
-	DaemonStartTimeoutSec    int
-	SandboxStartTimeoutSec   int
-	UseSnapshotEntrypoint    bool
-	VolumeCleanupIntervalSec int
-	BackupTimeoutMin         int
+	ApiClient                    client.APIClient
+	BackupInfoCache              *cache.BackupInfoCache
+	Logger                       *slog.Logger
+	AWSRegion                    string
+	AWSEndpointUrl               string
+	AWSAccessKeyId               string
+	AWSSecretAccessKey           string
+	DaemonPath                   string
+	ComputerUsePluginPath        string
+	NetRulesManager              *netrules.NetRulesManager
+	ResourceLimitsDisabled       bool
+	DaemonStartTimeoutSec        int
+	SandboxStartTimeoutSec       int
+	UseSnapshotEntrypoint        bool
+	VolumeCleanupInterval        time.Duration
+	VolumeCleanupDryRun          bool
+	VolumeCleanupExclusionPeriod time.Duration
+	BackupTimeoutMin             int
+	InitializeDaemonTelemetry    bool
 }
 
-func NewDockerClient(config DockerClientConfig) *DockerClient {
+func NewDockerClient(config DockerClientConfig) (*DockerClient, error) {
+	logger := slog.Default().With(slog.String("component", "docker-client"))
+	if config.Logger != nil {
+		logger = config.Logger.With(slog.String("component", "docker-client"))
+	}
+
 	if config.DaemonStartTimeoutSec <= 0 {
-		log.Warnf("Invalid DaemonStartTimeoutSec value: %d. Using default value: 60 seconds", config.DaemonStartTimeoutSec)
+		logger.Warn("Invalid daemon start timeout value. Using default value of 60 seconds")
 		config.DaemonStartTimeoutSec = 60
 	}
 
 	if config.SandboxStartTimeoutSec <= 0 {
-		log.Warnf("Invalid SandboxStartTimeoutSec value: %d. Using default value: 30 seconds", config.SandboxStartTimeoutSec)
+		logger.Warn("Invalid sandbox start timeout value. Using default value of 30 seconds")
 		config.SandboxStartTimeoutSec = 30
 	}
 
 	if config.BackupTimeoutMin <= 0 {
-		log.Warnf("Invalid BackupTimeoutMin value: %d. Using default value: 60 minutes", config.BackupTimeoutMin)
+		logger.Warn("Invalid backup timeout value. Using default value of 60 minutes")
 		config.BackupTimeoutMin = 60
 	}
 
-	return &DockerClient{
-		apiClient:                config.ApiClient,
-		statesCache:              config.StatesCache,
-		logWriter:                config.LogWriter,
-		awsRegion:                config.AWSRegion,
-		awsEndpointUrl:           config.AWSEndpointUrl,
-		awsAccessKeyId:           config.AWSAccessKeyId,
-		awsSecretAccessKey:       config.AWSSecretAccessKey,
-		volumeMutexes:            make(map[string]*sync.Mutex),
-		daemonPath:               config.DaemonPath,
-		computerUsePluginPath:    config.ComputerUsePluginPath,
-		netRulesManager:          config.NetRulesManager,
-		resourceLimitsDisabled:   config.ResourceLimitsDisabled,
-		daemonStartTimeoutSec:    config.DaemonStartTimeoutSec,
-		sandboxStartTimeoutSec:   config.SandboxStartTimeoutSec,
-		useSnapshotEntrypoint:    config.UseSnapshotEntrypoint,
-		volumeCleanupIntervalSec: config.VolumeCleanupIntervalSec,
-		backupTimeoutMin:         config.BackupTimeoutMin,
+	var info system.Info
+	err := utils.RetryWithExponentialBackoff(
+		context.Background(),
+		"get Docker info",
+		8,
+		1*time.Second,
+		5*time.Second,
+		func() error {
+			var infoErr error
+			info, infoErr = config.ApiClient.Info(context.Background())
+			return infoErr
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Docker info: %w", err)
 	}
+
+	filesystem := ""
+
+	for _, driver := range info.DriverStatus {
+		if driver[0] == "Backing Filesystem" {
+			filesystem = driver[1]
+			break
+		}
+	}
+
+	return &DockerClient{
+		apiClient:                    config.ApiClient,
+		backupInfoCache:              config.BackupInfoCache,
+		logger:                       logger,
+		awsRegion:                    config.AWSRegion,
+		awsEndpointUrl:               config.AWSEndpointUrl,
+		awsAccessKeyId:               config.AWSAccessKeyId,
+		awsSecretAccessKey:           config.AWSSecretAccessKey,
+		volumeMutexes:                make(map[string]*sync.Mutex),
+		daemonPath:                   config.DaemonPath,
+		computerUsePluginPath:        config.ComputerUsePluginPath,
+		netRulesManager:              config.NetRulesManager,
+		resourceLimitsDisabled:       config.ResourceLimitsDisabled,
+		daemonStartTimeoutSec:        config.DaemonStartTimeoutSec,
+		sandboxStartTimeoutSec:       config.SandboxStartTimeoutSec,
+		useSnapshotEntrypoint:        config.UseSnapshotEntrypoint,
+		volumeCleanupInterval:        config.VolumeCleanupInterval,
+		volumeCleanupDryRun:          config.VolumeCleanupDryRun,
+		volumeCleanupExclusionPeriod: config.VolumeCleanupExclusionPeriod,
+		backupTimeoutMin:             config.BackupTimeoutMin,
+		initializeDaemonTelemetry:    config.InitializeDaemonTelemetry,
+		filesystem:                   filesystem,
+	}, nil
 }
 
 func (d *DockerClient) ApiClient() client.APIClient {
@@ -75,24 +116,28 @@ func (d *DockerClient) ApiClient() client.APIClient {
 }
 
 type DockerClient struct {
-	apiClient                client.APIClient
-	statesCache              *cache.StatesCache
-	logWriter                io.Writer
-	awsRegion                string
-	awsEndpointUrl           string
-	awsAccessKeyId           string
-	awsSecretAccessKey       string
-	volumeMutexes            map[string]*sync.Mutex
-	volumeMutexesMutex       sync.Mutex
-	daemonPath               string
-	computerUsePluginPath    string
-	netRulesManager          *netrules.NetRulesManager
-	resourceLimitsDisabled   bool
-	daemonStartTimeoutSec    int
-	sandboxStartTimeoutSec   int
-	useSnapshotEntrypoint    bool
-	volumeCleanupIntervalSec int
-	backupTimeoutMin         int
-	volumeCleanupMutex       sync.Mutex
-	lastVolumeCleanup        time.Time
+	apiClient                    client.APIClient
+	backupInfoCache              *cache.BackupInfoCache
+	logger                       *slog.Logger
+	awsRegion                    string
+	awsEndpointUrl               string
+	awsAccessKeyId               string
+	awsSecretAccessKey           string
+	volumeMutexes                map[string]*sync.Mutex
+	volumeMutexesMutex           sync.Mutex
+	daemonPath                   string
+	computerUsePluginPath        string
+	netRulesManager              *netrules.NetRulesManager
+	resourceLimitsDisabled       bool
+	daemonStartTimeoutSec        int
+	sandboxStartTimeoutSec       int
+	useSnapshotEntrypoint        bool
+	volumeCleanupInterval        time.Duration
+	volumeCleanupDryRun          bool
+	volumeCleanupExclusionPeriod time.Duration
+	backupTimeoutMin             int
+	volumeCleanupMutex           sync.Mutex
+	lastVolumeCleanup            time.Time
+	initializeDaemonTelemetry    bool
+	filesystem                   string
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	common_errors "github.com/daytonaio/common-go/pkg/errors"
+	"github.com/daytonaio/common-go/pkg/utils"
 	apiclient "github.com/daytonaio/daytona/libs/api-client-go"
 	"github.com/gin-gonic/gin"
 
@@ -30,7 +31,7 @@ func (p *Proxy) getSnapshotTarget(ctx *gin.Context) (*url.URL, map[string]string
 
 	snapshot, err := p.getSnapshot(ctx, snapshotId)
 	if err != nil {
-		ctx.Error(common_errors.NewBadRequestError(fmt.Errorf("failed to get snapshot: %w", err)))
+		ctx.Error(err)
 		return nil, nil, fmt.Errorf("failed to get snapshot: %w", err)
 	}
 
@@ -46,7 +47,7 @@ func (p *Proxy) getSnapshotTarget(ctx *gin.Context) (*url.URL, map[string]string
 
 	runnerInfo, err := p.getRunnerInfo(ctx, *snapshot.InitialRunnerId)
 	if err != nil {
-		ctx.Error(common_errors.NewBadRequestError(fmt.Errorf("failed to get runner info: %w", err)))
+		ctx.Error(err)
 		return nil, nil, fmt.Errorf("failed to get runner info: %w", err)
 	}
 
@@ -70,26 +71,43 @@ func (p *Proxy) getSnapshotTarget(ctx *gin.Context) (*url.URL, map[string]string
 	}, nil
 }
 
-func (p *Proxy) getSnapshot(ctx context.Context, snapshotId string) (*apiclient.SnapshotDto, error) {
-	snapshot, _, err := p.apiclient.SnapshotsAPI.GetSnapshot(ctx, snapshotId).Execute()
-	if err != nil {
-		return nil, err
-	}
+func (p *Proxy) getSnapshot(ctx *gin.Context, snapshotId string) (*apiclient.SnapshotDto, error) {
+	var snapshot *apiclient.SnapshotDto
+	bearerToken := p.getBearerToken(ctx)
+	apiClient := p.getUserApiClient(ctx, bearerToken)
 
-	return snapshot, nil
+	err := utils.RetryWithExponentialBackoff(ctx, "getSnapshot", proxyMaxRetries, proxyBaseDelay, proxyMaxDelay, func() error {
+		s, _, e := apiClient.SnapshotsAPI.GetSnapshot(ctx, snapshotId).Execute()
+		snapshot = s
+		openapiErr := common_errors.ConvertOpenAPIError(e)
+
+		if openapiErr != nil && !common_errors.IsRetryableOpenAPIError(openapiErr) {
+			return &utils.NonRetryableError{Err: openapiErr}
+		}
+
+		return openapiErr
+	})
+	return snapshot, err
 }
 
 func (p *Proxy) getRunnerInfo(ctx context.Context, runnerId string) (*RunnerInfo, error) {
-	has, err := p.runnerCache.Has(ctx, runnerId)
-	if err != nil {
-		return nil, err
+	runnerInfo, err := p.runnerCache.Get(ctx, runnerId)
+	if err == nil {
+		return runnerInfo, nil
 	}
 
-	if has {
-		return p.runnerCache.Get(ctx, runnerId)
-	}
+	var runner *apiclient.RunnerFull
+	err = utils.RetryWithExponentialBackoff(ctx, "getRunnerInfo", proxyMaxRetries, proxyBaseDelay, proxyMaxDelay, func() error {
+		r, _, e := p.apiclient.RunnersAPI.GetRunnerFullById(context.Background(), runnerId).Execute()
+		runner = r
+		openapiErr := common_errors.ConvertOpenAPIError(e)
 
-	runner, _, err := p.apiclient.RunnersAPI.GetRunnerFullById(ctx, runnerId).Execute()
+		if openapiErr != nil && !common_errors.IsRetryableOpenAPIError(openapiErr) {
+			return &utils.NonRetryableError{Err: openapiErr}
+		}
+
+		return openapiErr
+	})
 	if err != nil {
 		return nil, err
 	}

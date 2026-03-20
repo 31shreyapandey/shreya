@@ -36,6 +36,8 @@ definitions:
     type: object
   CreateSandboxDTO:
     properties:
+      authToken:
+        type: string
       cpuQuota:
         minimum: 1
         type: integer
@@ -65,10 +67,19 @@ definitions:
         type: string
       networkBlockAll:
         type: boolean
+      organizationId:
+        description: Nullable for backward compatibility
+        type: string
       osUser:
+        type: string
+      otelEndpoint:
+        type: string
+      regionId:
         type: string
       registry:
         $ref: '#/definitions/RegistryDTO'
+      skipStart:
+        type: boolean
       snapshot:
         type: string
       storageQuota:
@@ -108,9 +119,7 @@ definitions:
         example: '2023-01-01T12:00:00Z'
         type: string
     required:
-      - code
       - message
-      - method
       - path
       - statusCode
       - timestamp
@@ -193,7 +202,6 @@ definitions:
     required:
       - errorReason
       - osUser
-      - snapshot
       - userId
     type: object
   RegistryDTO:
@@ -214,6 +222,9 @@ definitions:
       cpu:
         minimum: 1
         type: integer
+      disk:
+        minimum: 1
+        type: integer
       gpu:
         minimum: 0
         type: integer
@@ -227,15 +238,19 @@ definitions:
         type: string
       metrics:
         $ref: '#/definitions/RunnerMetrics'
+      serviceHealth:
+        items:
+          $ref: '#/definitions/RunnerServiceInfo'
+        type: array
     type: object
   RunnerMetrics:
     properties:
       currentAllocatedCpu:
-        type: integer
+        type: number
       currentAllocatedDiskGiB:
-        type: integer
+        type: number
       currentAllocatedMemoryGiB:
-        type: integer
+        type: number
       currentCpuLoadAverage:
         type: number
       currentCpuUsagePercentage:
@@ -248,6 +263,18 @@ definitions:
         type: integer
       currentStartedSandboxes:
         type: integer
+    type: object
+  RunnerServiceInfo:
+    properties:
+      errorReason:
+        type: string
+      healthy:
+        type: boolean
+      serviceName:
+        type: string
+    required:
+      - healthy
+      - serviceName
     type: object
   SandboxInfoResponse:
     properties:
@@ -452,45 +479,6 @@ paths:
       tags:
         - sandbox
   /sandboxes/{sandboxId}:
-    delete:
-      description: Remove a sandbox that has been previously destroyed
-      operationId: RemoveDestroyed
-      parameters:
-        - description: Sandbox ID
-          in: path
-          name: sandboxId
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        '200':
-          description: Sandbox removed
-          schema:
-            type: string
-        '400':
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-        '401':
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-        '404':
-          description: Not Found
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-        '409':
-          description: Conflict
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-        '500':
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: Remove a destroyed sandbox
-      tags:
-        - sandbox
     get:
       description: Get sandbox info
       operationId: Info
@@ -842,8 +830,11 @@ paths:
           name: metadata
           schema:
             type: object
+        - description: Auth token
+          in: query
+          name: token
+          type: string
       produces:
-        - application/json
         - application/json
       responses:
         '200':
@@ -1036,7 +1027,8 @@ paths:
         - toolbox
   /snapshots/build:
     post:
-      description: Build a snapshot from a Dockerfile and context hashes
+      description: Build a snapshot from a Dockerfile and context hashes. The operation
+        runs asynchronously and returns 202 immediately.
       operationId: BuildSnapshot
       parameters:
         - description: Build snapshot request
@@ -1046,8 +1038,8 @@ paths:
           schema:
             $ref: '#/definitions/BuildSnapshotRequestDTO'
       responses:
-        '200':
-          description: Snapshot successfully built
+        '202':
+          description: Snapshot build started
           schema:
             type: string
         '400':
@@ -1115,7 +1107,9 @@ paths:
         - snapshots
   /snapshots/info:
     get:
-      description: Get information about a specified snapshot including size and entrypoint
+      description: Get information about a specified snapshot including size and entrypoint.
+        Returns 422 if the last pull/build operation failed, with the error reason
+        in the message.
       operationId: GetSnapshotInfo
       parameters:
         - description: Snapshot name and tag
@@ -1140,6 +1134,10 @@ paths:
             $ref: '#/definitions/ErrorResponse'
         '404':
           description: Not Found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '422':
+          description: Unprocessable Entity
           schema:
             $ref: '#/definitions/ErrorResponse'
         '500':
@@ -1227,7 +1225,7 @@ paths:
   /snapshots/pull:
     post:
       description: Pull a snapshot from a registry and optionally push to another
-        registry
+        registry. The operation runs asynchronously and returns 202 immediately.
       operationId: PullSnapshot
       parameters:
         - description: Pull snapshot
@@ -1237,8 +1235,8 @@ paths:
           schema:
             $ref: '#/definitions/PullSnapshotRequestDTO'
       responses:
-        '200':
-          description: Snapshot successfully pulled
+        '202':
+          description: Snapshot pull started
           schema:
             type: string
         '400':

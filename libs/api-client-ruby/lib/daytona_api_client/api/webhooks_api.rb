@@ -19,7 +19,7 @@ module DaytonaApiClient
     def initialize(api_client = ApiClient.default)
       @api_client = api_client
     end
-    # Get Svix Consumer App Portal access URL for an organization
+    # Get Svix Consumer App Portal access for an organization
     # @param organization_id [String] 
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_daytona_organization_id Use with JWT to specify the organization ID
@@ -29,7 +29,7 @@ module DaytonaApiClient
       data
     end
 
-    # Get Svix Consumer App Portal access URL for an organization
+    # Get Svix Consumer App Portal access for an organization
     # @param organization_id [String] 
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_daytona_organization_id Use with JWT to specify the organization ID
@@ -377,7 +377,7 @@ module DaytonaApiClient
       # HTTP header 'Content-Type'
       content_type = @api_client.select_header_content_type(['application/json'])
       if !content_type.nil?
-        header_params['Content-Type'] = content_type
+          header_params['Content-Type'] = content_type
       end
       header_params[:'X-Daytona-Organization-ID'] = opts[:'x_daytona_organization_id'] if !opts[:'x_daytona_organization_id'].nil?
 

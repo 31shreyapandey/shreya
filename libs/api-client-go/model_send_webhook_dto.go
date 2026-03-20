@@ -22,11 +22,11 @@ var _ MappedNullable = &SendWebhookDto{}
 // SendWebhookDto struct for SendWebhookDto
 type SendWebhookDto struct {
 	// The type of event being sent
-	EventType string `json:"eventType"`
+	EventType WebhookEvent `json:"eventType"`
 	// The payload data to send
 	Payload map[string]interface{} `json:"payload"`
 	// Optional event ID for idempotency
-	EventId              *string `json:"eventId,omitempty"`
+	EventId *string `json:"eventId,omitempty"`
 	AdditionalProperties map[string]interface{}
 }
 
@@ -36,7 +36,7 @@ type _SendWebhookDto SendWebhookDto
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewSendWebhookDto(eventType string, payload map[string]interface{}) *SendWebhookDto {
+func NewSendWebhookDto(eventType WebhookEvent, payload map[string]interface{}) *SendWebhookDto {
 	this := SendWebhookDto{}
 	this.EventType = eventType
 	this.Payload = payload
@@ -52,9 +52,9 @@ func NewSendWebhookDtoWithDefaults() *SendWebhookDto {
 }
 
 // GetEventType returns the EventType field value
-func (o *SendWebhookDto) GetEventType() string {
+func (o *SendWebhookDto) GetEventType() WebhookEvent {
 	if o == nil {
-		var ret string
+		var ret WebhookEvent
 		return ret
 	}
 
@@ -63,7 +63,7 @@ func (o *SendWebhookDto) GetEventType() string {
 
 // GetEventTypeOk returns a tuple with the EventType field value
 // and a boolean to check if the value has been set.
-func (o *SendWebhookDto) GetEventTypeOk() (*string, bool) {
+func (o *SendWebhookDto) GetEventTypeOk() (*WebhookEvent, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -71,7 +71,7 @@ func (o *SendWebhookDto) GetEventTypeOk() (*string, bool) {
 }
 
 // SetEventType sets field value
-func (o *SendWebhookDto) SetEventType(v string) {
+func (o *SendWebhookDto) SetEventType(v WebhookEvent) {
 	o.EventType = v
 }
 
@@ -132,7 +132,7 @@ func (o *SendWebhookDto) SetEventId(v string) {
 }
 
 func (o SendWebhookDto) MarshalJSON() ([]byte, error) {
-	toSerialize, err := o.ToMap()
+	toSerialize,err := o.ToMap()
 	if err != nil {
 		return []byte{}, err
 	}
@@ -168,10 +168,10 @@ func (o *SendWebhookDto) UnmarshalJSON(data []byte) (err error) {
 	err = json.Unmarshal(data, &allProperties)
 
 	if err != nil {
-		return err
+		return err;
 	}
 
-	for _, requiredProperty := range requiredProperties {
+	for _, requiredProperty := range(requiredProperties) {
 		if _, exists := allProperties[requiredProperty]; !exists {
 			return fmt.Errorf("no value given for required property %v", requiredProperty)
 		}
@@ -234,3 +234,5 @@ func (v *NullableSendWebhookDto) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

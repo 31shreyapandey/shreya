@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import ClassVar, TypeVar, Union
 
 from daytona_toolbox_api_client import SessionExecuteRequest as ApiSessionExecuteRequest
 from daytona_toolbox_api_client import SessionExecuteResponse as ApiSessionExecuteResponse
@@ -40,6 +41,7 @@ class SessionExecuteRequest(ApiSessionExecuteRequest, AsyncApiSessionExecuteRequ
         command (str): The command to execute.
         run_async (bool | None): Whether to execute the command asynchronously.
         var_async (bool | None): Deprecated. Use `run_async` instead.
+        suppress_input_echo (bool | None): Whether to suppress input echo. Default is `False`.
     """
 
     @model_validator(mode="before")
@@ -192,3 +194,15 @@ def demux_log(data: bytes) -> tuple[bytes, bytes]:
             state = "stderr"
 
     return bytes(out_buf), bytes(err_buf)
+
+
+# Type aliases for callbacks
+T = TypeVar("T")
+OutputHandler = Union[
+    Callable[[T], None],
+    Callable[[T], Awaitable[None]],
+]
+"""Callback type that accepts both sync and async handlers.
+
+Blocking synchronous operations inside handlers may cause WebSocket disconnections.
+"""

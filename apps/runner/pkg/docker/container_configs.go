@@ -4,36 +4,40 @@
 package docker
 
 import (
-	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/daytonaio/runner/cmd/runner/config"
 	"github.com/daytonaio/runner/pkg/api/dto"
 	"github.com/daytonaio/runner/pkg/common"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/strslice"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/system"
 )
 
-func (d *DockerClient) getContainerConfigs(ctx context.Context, sandboxDto dto.CreateSandboxDTO, volumeMountPathBinds []string) (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
-	containerConfig, err := d.getContainerCreateConfig(ctx, sandboxDto)
+func (d *DockerClient) getContainerConfigs(sandboxDto dto.CreateSandboxDTO, image *image.InspectResponse, volumeMountPathBinds []string) (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
+	containerConfig, err := d.getContainerCreateConfig(sandboxDto, image)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	hostConfig, err := d.getContainerHostConfig(ctx, sandboxDto, volumeMountPathBinds)
+	hostConfig, err := d.getContainerHostConfig(sandboxDto, volumeMountPathBinds)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	networkingConfig := d.getContainerNetworkingConfig(ctx)
+	networkingConfig := d.getContainerNetworkingConfig()
 	return containerConfig, hostConfig, networkingConfig, nil
 }
 
-func (d *DockerClient) getContainerCreateConfig(ctx context.Context, sandboxDto dto.CreateSandboxDTO) (*container.Config, error) {
+func (d *DockerClient) getContainerCreateConfig(sandboxDto dto.CreateSandboxDTO, image *image.InspectResponse) (*container.Config, error) {
+	if image == nil {
+		return nil, fmt.Errorf("image not found for sandbox: %s", sandboxDto.Id)
+	}
+
 	envVars := []string{
 		"DAYTONA_SANDBOX_ID=" + sandboxDto.Id,
 		"DAYTONA_SANDBOX_SNAPSHOT=" + sandboxDto.Snapshot,
@@ -44,7 +48,26 @@ func (d *DockerClient) getContainerCreateConfig(ctx context.Context, sandboxDto 
 		envVars = append(envVars, fmt.Sprintf("%s=%s", key, value))
 	}
 
+	if sandboxDto.OtelEndpoint != nil && *sandboxDto.OtelEndpoint != "" {
+		envVars = append(envVars, "DAYTONA_OTEL_ENDPOINT="+*sandboxDto.OtelEndpoint)
+	}
+
+	if sandboxDto.OrganizationId != nil && *sandboxDto.OrganizationId != "" {
+		envVars = append(envVars, "DAYTONA_ORGANIZATION_ID="+*sandboxDto.OrganizationId)
+	}
+
+	if sandboxDto.RegionId != nil && *sandboxDto.RegionId != "" {
+		envVars = append(envVars, "DAYTONA_REGION_ID="+*sandboxDto.RegionId)
+	}
+
 	labels := make(map[string]string)
+	if len(sandboxDto.Volumes) > 0 {
+		volumeMountPaths := make([]string, len(sandboxDto.Volumes))
+		for i, v := range sandboxDto.Volumes {
+			volumeMountPaths[i] = v.MountPath
+		}
+		labels["daytona.volume_mount_paths"] = strings.Join(volumeMountPaths, ",")
+	}
 	if sandboxDto.Metadata != nil {
 		if orgID, ok := sandboxDto.Metadata["organizationId"]; ok && orgID != "" {
 			labels["daytona.organization_id"] = orgID
@@ -58,12 +81,6 @@ func (d *DockerClient) getContainerCreateConfig(ctx context.Context, sandboxDto 
 	cmd := []string{}
 	entrypoint := sandboxDto.Entrypoint
 	if !d.useSnapshotEntrypoint {
-		// Inspect image
-		image, err := d.apiClient.ImageInspect(ctx, sandboxDto.Snapshot)
-		if err != nil {
-			return nil, err
-		}
-
 		if image.Config.WorkingDir != "" {
 			workingDir = image.Config.WorkingDir
 		}
@@ -99,7 +116,7 @@ func (d *DockerClient) getContainerCreateConfig(ctx context.Context, sandboxDto 
 	}, nil
 }
 
-func (d *DockerClient) getContainerHostConfig(ctx context.Context, sandboxDto dto.CreateSandboxDTO, volumeMountPathBinds []string) (*container.HostConfig, error) {
+func (d *DockerClient) getContainerHostConfig(sandboxDto dto.CreateSandboxDTO, volumeMountPathBinds []string) (*container.HostConfig, error) {
 	var binds []string
 
 	binds = append(binds, fmt.Sprintf("%s:%s:ro", d.daemonPath, common.DAEMON_PATH))
@@ -115,8 +132,13 @@ func (d *DockerClient) getContainerHostConfig(ctx context.Context, sandboxDto dt
 
 	hostConfig := &container.HostConfig{
 		Privileged: true,
-		ExtraHosts: []string{"host.docker.internal:host-gateway"},
 		Binds:      binds,
+	}
+
+	if sandboxDto.OtelEndpoint != nil && strings.Contains(*sandboxDto.OtelEndpoint, "host.docker.internal") {
+		hostConfig.ExtraHosts = []string{
+			"host.docker.internal:host-gateway",
+		}
 	}
 
 	if !d.resourceLimitsDisabled {
@@ -133,13 +155,7 @@ func (d *DockerClient) getContainerHostConfig(ctx context.Context, sandboxDto dt
 		hostConfig.Runtime = containerRuntime
 	}
 
-	info, err := d.apiClient.Info(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	filesystem := d.getFilesystem(info)
-	if filesystem == "xfs" {
+	if d.filesystem == "xfs" {
 		hostConfig.StorageOpt = map[string]string{
 			"size": fmt.Sprintf("%dG", sandboxDto.StorageQuota),
 		}
@@ -148,7 +164,7 @@ func (d *DockerClient) getContainerHostConfig(ctx context.Context, sandboxDto dt
 	return hostConfig, nil
 }
 
-func (d *DockerClient) getContainerNetworkingConfig(_ context.Context) *network.NetworkingConfig {
+func (d *DockerClient) getContainerNetworkingConfig() *network.NetworkingConfig {
 	containerNetwork := config.GetContainerNetwork()
 	if containerNetwork != "" {
 		return &network.NetworkingConfig{
@@ -158,14 +174,4 @@ func (d *DockerClient) getContainerNetworkingConfig(_ context.Context) *network.
 		}
 	}
 	return nil
-}
-
-func (d *DockerClient) getFilesystem(info system.Info) string {
-	for _, driver := range info.DriverStatus {
-		if driver[0] == "Backing Filesystem" {
-			return driver[1]
-		}
-	}
-
-	return ""
 }

@@ -23,8 +23,6 @@ func (e *Executor) createSandbox(ctx context.Context, job *apiclient.Job) (any, 
 
 	_, daemonVersion, err := e.docker.Create(ctx, createSandboxDto)
 	if err != nil {
-		// TODO: is this needed?
-		// runner.StatesCache.SetSandboxState(ctx, createSandboxDto.Id, enums.SandboxStateError)
 		common.ContainerOperationCount.WithLabelValues("create", string(common.PrometheusOperationStatusFailure)).Inc()
 		return nil, common.FormatRecoverableError(err)
 	}
@@ -37,13 +35,13 @@ func (e *Executor) createSandbox(ctx context.Context, job *apiclient.Job) (any, 
 }
 
 func (e *Executor) startSandbox(ctx context.Context, job *apiclient.Job) (any, error) {
-	var metadata map[string]string
-	err := e.parsePayload(job.Payload, &metadata)
+	var payload StartSandboxPayload
+	err := e.parsePayload(job.Payload, &payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal payload: %w", err)
 	}
 
-	daemonVersion, err := e.docker.Start(ctx, job.ResourceId, metadata)
+	_, daemonVersion, err := e.docker.Start(ctx, job.ResourceId, payload.AuthToken, payload.Metadata)
 	if err != nil {
 		return nil, common.FormatRecoverableError(err)
 	}
@@ -65,8 +63,6 @@ func (e *Executor) stopSandbox(ctx context.Context, job *apiclient.Job) (any, er
 func (e *Executor) destroySandbox(ctx context.Context, job *apiclient.Job) (any, error) {
 	err := e.docker.Destroy(ctx, job.ResourceId)
 	if err != nil {
-		// TODO: is this needed?
-		// runner.StatesCache.SetSandboxState(ctx, sandboxId, enums.SandboxStateError)
 		common.ContainerOperationCount.WithLabelValues("destroy", string(common.PrometheusOperationStatusFailure)).Inc()
 		return nil, common.FormatRecoverableError(err)
 	}
@@ -97,6 +93,24 @@ func (e *Executor) recoverSandbox(ctx context.Context, job *apiclient.Job) (any,
 	if err != nil {
 		return nil, common.FormatRecoverableError(err)
 	}
+
+	return nil, nil
+}
+
+func (e *Executor) resizeSandbox(ctx context.Context, job *apiclient.Job) (any, error) {
+	var resizeSandboxDto dto.ResizeSandboxDTO
+	err := e.parsePayload(job.Payload, &resizeSandboxDto)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal payload: %w", err)
+	}
+
+	err = e.docker.Resize(ctx, job.ResourceId, resizeSandboxDto)
+	if err != nil {
+		common.ContainerOperationCount.WithLabelValues("resize", string(common.PrometheusOperationStatusFailure)).Inc()
+		return nil, common.FormatRecoverableError(err)
+	}
+
+	common.ContainerOperationCount.WithLabelValues("resize", string(common.PrometheusOperationStatusSuccess)).Inc()
 
 	return nil, nil
 }

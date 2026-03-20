@@ -5,15 +5,15 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Awaitable, Callable
 
 from daytona_toolbox_api_client_async import CreateContextRequest, InterpreterApi, InterpreterContext
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 
 from .._utils.errors import intercept_errors
-from ..common.code_interpreter import ExecutionError, ExecutionResult, OutputHandler, OutputMessage
+from ..common.code_interpreter import ExecutionError, ExecutionResult, OutputMessage
 from ..common.errors import DaytonaError, DaytonaTimeoutError
+from ..common.process import OutputHandler
 
 WEBSOCKET_TIMEOUT_CODE = 4008
 
@@ -33,16 +33,13 @@ class AsyncCodeInterpreter:
     def __init__(
         self,
         api_client: InterpreterApi,
-        ensure_toolbox_url: Callable[[], Awaitable[None]],
     ):
         """Initialize a new AsyncCodeInterpreter instance.
 
         Args:
             api_client: API client for interpreter operations.
-            ensure_toolbox_url: Ensures the toolbox API URL is initialized.
         """
         self._api_client: InterpreterApi = api_client
-        self._ensure_toolbox_url: Callable[[], Awaitable[None]] = ensure_toolbox_url
 
     @intercept_errors(message_prefix="Failed to run code: ")
     async def run_code(
@@ -107,7 +104,6 @@ class AsyncCodeInterpreter:
             )
             ```
         """
-        await self._ensure_toolbox_url()
         _, url, headers, *_ = self._api_client._execute_interpreter_code_serialize(
             _request_auth=None,
             _content_type=None,

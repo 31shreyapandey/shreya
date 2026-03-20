@@ -5,11 +5,24 @@ package utils
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
+
+// NonRetryableError wraps an error to signal that it should not be retried
+type NonRetryableError struct {
+	Err error
+}
+
+func (e *NonRetryableError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *NonRetryableError) Unwrap() error {
+	return e.Err
+}
 
 const (
 	// Default retry configuration for Docker operations
@@ -21,24 +34,37 @@ const (
 // RetryWithExponentialBackoff executes a function with exponential backoff retry logic
 func RetryWithExponentialBackoff(ctx context.Context, operationName string, maxRetries int, baseDelay, maxDelay time.Duration, operationFunc func() error) error {
 	if maxRetries <= 1 {
-		log.Debugf("Invalid max retries value: %d. Using default value: %d", maxRetries, DEFAULT_MAX_RETRIES)
+		slog.DebugContext(ctx, "Invalid max retries value, using default", "value", maxRetries, "default", DEFAULT_MAX_RETRIES)
 		maxRetries = DEFAULT_MAX_RETRIES
 	}
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		logAttempt := attempt + 1
-		log.Debugf("%s (attempt %d/%d)...", operationName, logAttempt, maxRetries)
+		slog.DebugContext(ctx, "Executing operation",
+			"operation", operationName,
+			"attempt", logAttempt,
+			"max_retries", maxRetries)
 
 		err := operationFunc()
 		if err == nil {
 			return nil
 		}
 
+		var nonRetryable *NonRetryableError
+		if errors.As(err, &nonRetryable) {
+			return nonRetryable.Err
+		}
+
 		if attempt < maxRetries-1 {
 			// Calculate exponential backoff delay
 			delay := min(baseDelay*time.Duration(1<<attempt), maxDelay)
 
-			log.Warnf("Failed to %s (attempt %d/%d): %v. Retrying in %v...", operationName, logAttempt, maxRetries, err, delay)
+			slog.WarnContext(ctx, "Operation failed, retrying",
+				"operation", operationName,
+				"attempt", logAttempt,
+				"max_retries", maxRetries,
+				"error", err,
+				"retry_delay", delay)
 
 			select {
 			case <-time.After(delay):

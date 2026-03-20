@@ -146,6 +146,15 @@ export const getSidebarConfig = (
         },
         {
           type: 'link',
+          href: localizePath('/docs/architecture', locale),
+          label: t('sidebarconfig.architecture'),
+          description: t('sidebarconfig.architectureDescription'),
+          attrs: {
+            icon: 'architecture.svg',
+          },
+        },
+        {
+          type: 'link',
           href: localizePath('/docs/getting-started', locale),
           label: t('sidebarconfig.gettingStarted'),
           description: t('sidebarconfig.gettingStartedDescription'),
@@ -323,6 +332,15 @@ export const getSidebarConfig = (
         },
         {
           type: 'link',
+          href: localizePath('/docs/vnc-access', locale),
+          label: t('sidebarconfig.vncAccess'),
+          description: t('sidebarconfig.vncAccessDescription'),
+          attrs: {
+            icon: 'vnc.svg',
+          },
+        },
+        {
+          type: 'link',
           href: localizePath('/docs/vpn-connections', locale),
           label: t('sidebarconfig.vpnConnection'),
           description: t('sidebarconfig.vpnConnectionDescription'),
@@ -337,6 +355,24 @@ export const getSidebarConfig = (
           description: t('sidebarconfig.previewDescription'),
           attrs: {
             icon: 'globe.svg',
+          },
+        },
+        {
+          type: 'link',
+          href: localizePath('/docs/custom-preview-proxy', locale),
+          label: t('sidebarconfig.customPreviewProxy'),
+          description: t('sidebarconfig.customPreviewProxyDescription'),
+          attrs: {
+            icon: 'proxy-link.svg',
+          },
+        },
+        {
+          type: 'link',
+          href: localizePath('/docs/playground', locale),
+          label: t('sidebarconfig.playground'),
+          description: t('sidebarconfig.playgroundDescription'),
+          attrs: {
+            icon: 'playground.svg',
           },
         },
       ],
@@ -402,15 +438,42 @@ export const getSidebarConfig = (
         },
         {
           type: 'link',
+          href: localizePath('/docs/guides/opencode', locale),
+          label: t('sidebarconfig.opencode'),
+          disablePagination: true,
+          attrs: {
+            icon: 'opencode.svg',
+          },
+        },
+        {
+          type: 'link',
+          href: localizePath(
+            '/docs/guides/opencode/opencode-plugin',
+            locale
+          ),
+          label: t('sidebarconfig.opencode'),
+          disablePagination: true,
+          hideInSidebar: true,
+        },
+        {
+          type: 'link',
+          href: localizePath(
+            '/docs/guides/opencode/opencode-sdk-agent',
+            locale
+          ),
+          label: t('sidebarconfig.opencode'),
+          disablePagination: true,
+          hideInSidebar: true,
+        },
+        {
+          type: 'link',
           href: localizePath(
             '/docs/guides/opencode/opencode-web-agent',
             locale
           ),
           label: t('sidebarconfig.opencode'),
           disablePagination: true,
-          attrs: {
-            icon: 'opencode.svg',
-          },
+          hideInSidebar: true,
         },
         {
           type: 'link',
@@ -484,6 +547,35 @@ export const getSidebarConfig = (
         },
         {
           type: 'link',
+          href: localizePath('/docs/guides/openclaw', locale),
+          label: t('sidebarconfig.openclaw'),
+          disablePagination: true,
+          attrs: {
+            icon: 'openclaw.svg',
+          },
+        },
+        {
+          type: 'link',
+          href: localizePath(
+            '/docs/guides/openclaw/openclaw-run-secure-sandbox',
+            locale
+          ),
+          label: t('sidebarconfig.openclaw'),
+          disablePagination: true,
+          hideInSidebar: true,
+        },
+        {
+          type: 'link',
+          href: localizePath(
+            '/docs/guides/openclaw/openclaw-sdk-sandbox',
+            locale
+          ),
+          label: t('sidebarconfig.openclaw'),
+          disablePagination: true,
+          hideInSidebar: true,
+        },
+        {
+          type: 'link',
           href: localizePath(
             '/docs/guides/codex/codex-sdk-interactive-terminal-sandbox',
             locale
@@ -529,12 +621,29 @@ export const getSidebarConfig = (
         },
         {
           type: 'link',
-          href: localizePath('/docs/guides/recursive-language-models', locale),
-          label: t('sidebarconfig.recursiveLms'),
+          href: localizePath('/docs/guides/rlm', locale),
+          label: t('sidebarconfig.rlm'),
           disablePagination: true,
           attrs: {
             icon: 'recursive-lm.svg',
           },
+        },
+        {
+          type: 'link',
+          href: localizePath(
+            '/docs/guides/rlm/recursive-language-models',
+            locale
+          ),
+          label: t('sidebarconfig.rlm'),
+          disablePagination: true,
+          hideInSidebar: true,
+        },
+        {
+          type: 'link',
+          href: localizePath('/docs/guides/rlm/dspy-rlms', locale),
+          label: t('sidebarconfig.rlm'),
+          disablePagination: true,
+          hideInSidebar: true,
         },
       ],
     },
@@ -551,6 +660,15 @@ export const getSidebarConfig = (
           description: t('sidebarconfig.auditLogsDescription'),
           attrs: {
             icon: 'log.svg',
+          },
+        },
+        {
+          type: 'link',
+          href: localizePath('/docs/security-exhibit', locale),
+          label: t('sidebarconfig.securityExhibit'),
+          description: t('sidebarconfig.securityExhibitDescription'),
+          attrs: {
+            icon: 'security.svg',
           },
         },
       ],
@@ -578,6 +696,23 @@ export const getSidebarConfig = (
           disablePagination: true,
           attrs: {
             icon: 'computer.svg',
+          },
+        },
+      ],
+    },
+    {
+      type: 'group',
+      label: t('sidebarconfig.experimental'),
+      homePageHref: localizePath('/docs', locale),
+      category: NavigationCategory.GENERAL,
+      entries: [
+        {
+          type: 'link',
+          href: localizePath('/docs/experimental/otel-collection', locale),
+          label: t('sidebarconfig.otelCollection'),
+          disablePagination: true,
+          attrs: {
+            icon: 'telemetry.svg',
           },
         },
       ],

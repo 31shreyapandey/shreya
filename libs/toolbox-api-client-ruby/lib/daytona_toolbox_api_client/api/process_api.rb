@@ -116,7 +116,7 @@ module DaytonaToolboxApiClient
       # HTTP header 'Content-Type'
       content_type = @api_client.select_header_content_type(['application/json'])
       if !content_type.nil?
-        header_params['Content-Type'] = content_type
+          header_params['Content-Type'] = content_type
       end
 
       # form parameters
@@ -182,7 +182,7 @@ module DaytonaToolboxApiClient
       # HTTP header 'Content-Type'
       content_type = @api_client.select_header_content_type(['application/json'])
       if !content_type.nil?
-        header_params['Content-Type'] = content_type
+          header_params['Content-Type'] = content_type
       end
 
       # form parameters
@@ -374,7 +374,7 @@ module DaytonaToolboxApiClient
       # HTTP header 'Content-Type'
       content_type = @api_client.select_header_content_type(['application/json'])
       if !content_type.nil?
-        header_params['Content-Type'] = content_type
+          header_params['Content-Type'] = content_type
       end
 
       # form parameters
@@ -402,6 +402,123 @@ module DaytonaToolboxApiClient
       data, status_code, headers = @api_client.call_api(:POST, local_var_path, new_options)
       if @api_client.config.debugging
         @api_client.config.logger.debug "API called: ProcessApi#execute_command\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
+    # Get entrypoint logs
+    # Get logs for a sandbox entrypoint session. Supports both HTTP and WebSocket streaming.
+    # @param [Hash] opts the optional parameters
+    # @option opts [Boolean] :follow Follow logs in real-time (WebSocket only)
+    # @return [String]
+    def get_entrypoint_logs(opts = {})
+      data, _status_code, _headers = get_entrypoint_logs_with_http_info(opts)
+      data
+    end
+
+    # Get entrypoint logs
+    # Get logs for a sandbox entrypoint session. Supports both HTTP and WebSocket streaming.
+    # @param [Hash] opts the optional parameters
+    # @option opts [Boolean] :follow Follow logs in real-time (WebSocket only)
+    # @return [Array<(String, Integer, Hash)>] String data, response status code and response headers
+    def get_entrypoint_logs_with_http_info(opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: ProcessApi.get_entrypoint_logs ...'
+      end
+      # resource path
+      local_var_path = '/process/session/entrypoint/logs'
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+      query_params[:'follow'] = opts[:'follow'] if !opts[:'follow'].nil?
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['text/plain']) unless header_params['Accept']
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body]
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'String'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || []
+
+      new_options = opts.merge(
+        :operation => :"ProcessApi.get_entrypoint_logs",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:GET, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: ProcessApi#get_entrypoint_logs\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
+    # Get entrypoint session details
+    # Get details of an entrypoint session including its commands
+    # @param [Hash] opts the optional parameters
+    # @return [Session]
+    def get_entrypoint_session(opts = {})
+      data, _status_code, _headers = get_entrypoint_session_with_http_info(opts)
+      data
+    end
+
+    # Get entrypoint session details
+    # Get details of an entrypoint session including its commands
+    # @param [Hash] opts the optional parameters
+    # @return [Array<(Session, Integer, Hash)>] Session data, response status code and response headers
+    def get_entrypoint_session_with_http_info(opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: ProcessApi.get_entrypoint_session ...'
+      end
+      # resource path
+      local_var_path = '/process/session/entrypoint'
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['application/json']) unless header_params['Accept']
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body]
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'Session'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || []
+
+      new_options = opts.merge(
+        :operation => :"ProcessApi.get_entrypoint_session",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:GET, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: ProcessApi#get_entrypoint_session\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
       end
       return data, status_code, headers
     end
@@ -829,7 +946,7 @@ module DaytonaToolboxApiClient
       # HTTP header 'Content-Type'
       content_type = @api_client.select_header_content_type(['application/json'])
       if !content_type.nil?
-        header_params['Content-Type'] = content_type
+          header_params['Content-Type'] = content_type
       end
 
       # form parameters
@@ -857,6 +974,84 @@ module DaytonaToolboxApiClient
       data, status_code, headers = @api_client.call_api(:POST, local_var_path, new_options)
       if @api_client.config.debugging
         @api_client.config.logger.debug "API called: ProcessApi#resize_pty_session\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
+    # Send input to command
+    # Send input data to a running command in a session for interactive execution
+    # @param session_id [String] Session ID
+    # @param command_id [String] Command ID
+    # @param request [SessionSendInputRequest] Input send request
+    # @param [Hash] opts the optional parameters
+    # @return [nil]
+    def send_input(session_id, command_id, request, opts = {})
+      send_input_with_http_info(session_id, command_id, request, opts)
+      nil
+    end
+
+    # Send input to command
+    # Send input data to a running command in a session for interactive execution
+    # @param session_id [String] Session ID
+    # @param command_id [String] Command ID
+    # @param request [SessionSendInputRequest] Input send request
+    # @param [Hash] opts the optional parameters
+    # @return [Array<(nil, Integer, Hash)>] nil, response status code and response headers
+    def send_input_with_http_info(session_id, command_id, request, opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: ProcessApi.send_input ...'
+      end
+      # verify the required parameter 'session_id' is set
+      if @api_client.config.client_side_validation && session_id.nil?
+        fail ArgumentError, "Missing the required parameter 'session_id' when calling ProcessApi.send_input"
+      end
+      # verify the required parameter 'command_id' is set
+      if @api_client.config.client_side_validation && command_id.nil?
+        fail ArgumentError, "Missing the required parameter 'command_id' when calling ProcessApi.send_input"
+      end
+      # verify the required parameter 'request' is set
+      if @api_client.config.client_side_validation && request.nil?
+        fail ArgumentError, "Missing the required parameter 'request' when calling ProcessApi.send_input"
+      end
+      # resource path
+      local_var_path = '/process/session/{sessionId}/command/{commandId}/input'.sub('{' + 'sessionId' + '}', CGI.escape(session_id.to_s)).sub('{' + 'commandId' + '}', CGI.escape(command_id.to_s))
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Content-Type'
+      content_type = @api_client.select_header_content_type(['application/json'])
+      if !content_type.nil?
+          header_params['Content-Type'] = content_type
+      end
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body] || @api_client.object_to_http_body(request)
+
+      # return_type
+      return_type = opts[:debug_return_type]
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || []
+
+      new_options = opts.merge(
+        :operation => :"ProcessApi.send_input",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:POST, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: ProcessApi#send_input\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
       end
       return data, status_code, headers
     end
@@ -903,7 +1098,7 @@ module DaytonaToolboxApiClient
       # HTTP header 'Content-Type'
       content_type = @api_client.select_header_content_type(['application/json'])
       if !content_type.nil?
-        header_params['Content-Type'] = content_type
+          header_params['Content-Type'] = content_type
       end
 
       # form parameters

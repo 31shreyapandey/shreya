@@ -16,11 +16,8 @@ import { RunnerService } from '../services/runner.service'
 import { BaseAuthContext, OrganizationAuthContext } from '../../common/interfaces/auth-context.interface'
 import { SystemRole } from '../../user/enums/system-role.enum'
 import { RegionType } from '../../region/enums/region-type.enum'
-import { isRegionProxyContext, RegionProxyContext } from '../../common/interfaces/region-proxy.interface'
-import {
-  isRegionSSHGatewayContext,
-  RegionSSHGatewayContext,
-} from '../../common/interfaces/region-ssh-gateway.interface'
+import { isRegionProxyContext } from '../../common/interfaces/region-proxy.interface'
+import { isRegionSSHGatewayContext } from '../../common/interfaces/region-ssh-gateway.interface'
 import { isProxyContext } from '../../common/interfaces/proxy-context.interface'
 import { isSshGatewayContext } from '../../common/interfaces/ssh-gateway-context.interface'
 
@@ -41,19 +38,13 @@ export class RunnerAccessGuard implements CanActivate {
     const authContext: BaseAuthContext = request.user
 
     try {
-      const runner = await this.runnerService.findOne(runnerId)
-      if (!runner) {
-        throw new NotFoundException('Runner not found')
-      }
+      const runner = await this.runnerService.findOneOrFail(runnerId)
 
       switch (true) {
         case isRegionProxyContext(authContext):
         case isRegionSSHGatewayContext(authContext): {
-          const regionContext = authContext as RegionProxyContext | RegionSSHGatewayContext
-          if (regionContext.regionId !== runner.region) {
-            throw new ForbiddenException('Region ID does not match runner region ID')
-          }
-          break
+          // Use RunnerRegionAccessGuard to check access instead
+          return false
         }
         case isProxyContext(authContext):
         case isSshGatewayContext(authContext):

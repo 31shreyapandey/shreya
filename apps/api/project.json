@@ -31,13 +31,20 @@
           "extractLicenses": true,
           "inspect": false
         }
-      },
-      "dependsOn": ["openapi"]
+      }
     },
     "openapi": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["{projectRoot}/src/**/*.ts", "!{projectRoot}/src/**/*.spec.ts", "{projectRoot}/tsconfig.app.json"],
+      "inputs": [
+        "{projectRoot}/src/**/*.ts",
+        "!{projectRoot}/src/**/*.spec.ts",
+        "{projectRoot}/tsconfig.app.json",
+        {
+          "dependentTasksOutputFiles": "**/*",
+          "transitive": true
+        }
+      ],
       "outputs": ["{workspaceRoot}/dist/apps/api/openapi.json", "{workspaceRoot}/dist/apps/api/openapi.3.1.0.json"],
       "options": {
         "commands": [
@@ -94,10 +101,10 @@
       ]
     },
     "push-manifest": {},
-    "migration:generate": {
+    "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "npx ts-node -P ./tsconfig.json -r tsconfig-paths/register ../../node_modules/typeorm/cli.js migration:generate -d ./src/data-source.ts ./src/migrations/migration"
+        "command": "bash apps/api/scripts/validate-migration-paths.sh $(find apps/api/src/migrations -name '*-migration.ts' -type f)"
       }
     }
   }

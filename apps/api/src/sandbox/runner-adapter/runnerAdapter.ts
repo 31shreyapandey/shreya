@@ -13,6 +13,7 @@ import { DockerRegistry } from '../../docker-registry/entities/docker-registry.e
 import { Sandbox } from '../entities/sandbox.entity'
 import { SandboxState } from '../enums/sandbox-state.enum'
 import { BackupState } from '../enums/backup-state.enum'
+import { RunnerServiceInfo } from '../common/runner-service-info'
 
 export interface RunnerSandboxInfo {
   state: SandboxState
@@ -46,6 +47,7 @@ export interface RunnerMetrics {
 }
 
 export interface RunnerInfo {
+  serviceHealth?: RunnerServiceInfo[]
   metrics?: RunnerMetrics
   appVersion?: string
 }
@@ -67,11 +69,17 @@ export interface RunnerAdapter {
     registry?: DockerRegistry,
     entrypoint?: string[],
     metadata?: { [key: string]: string },
+    otelEndpoint?: string,
+    skipStart?: boolean,
   ): Promise<StartSandboxResponse | undefined>
-  startSandbox(sandboxId: string, metadata?: { [key: string]: string }): Promise<StartSandboxResponse | undefined>
+  startSandbox(
+    sandboxId: string,
+    authToken: string,
+    metadata?: { [key: string]: string },
+    skipStart?: boolean,
+  ): Promise<StartSandboxResponse | undefined>
   stopSandbox(sandboxId: string): Promise<void>
   destroySandbox(sandboxId: string): Promise<void>
-  removeDestroyedSandbox(sandboxId: string): Promise<void>
   createBackup(sandbox: Sandbox, backupSnapshotName: string, registry?: DockerRegistry): Promise<void>
 
   removeSnapshot(snapshotName: string): Promise<void>
@@ -101,6 +109,8 @@ export interface RunnerAdapter {
   ): Promise<void>
 
   recoverSandbox(sandbox: Sandbox): Promise<void>
+
+  resizeSandbox(sandboxId: string, cpu?: number, memory?: number, disk?: number): Promise<void>
 }
 
 @Injectable()

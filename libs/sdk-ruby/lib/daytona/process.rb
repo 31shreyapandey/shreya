@@ -6,6 +6,8 @@ require 'uri'
 
 module Daytona
   class Process # rubocop:disable Metrics/ClassLength
+    include Instrumentation
+
     # @return [Daytona::SandboxPythonCodeToolbox,
     attr_reader :code_toolbox
 
@@ -24,11 +26,13 @@ module Daytona
     # @param sandbox_id [String] The ID of the Sandbox
     # @param toolbox_api [DaytonaToolboxApiClient::ProcessApi] API client for Sandbox operations
     # @param get_preview_link [Proc] Function to get preview link for a port
-    def initialize(code_toolbox:, sandbox_id:, toolbox_api:, get_preview_link:)
+    # @param otel_state [Daytona::OtelState, nil]
+    def initialize(code_toolbox:, sandbox_id:, toolbox_api:, get_preview_link:, otel_state: nil)
       @code_toolbox = code_toolbox
       @sandbox_id = sandbox_id
       @toolbox_api = toolbox_api
       @get_preview_link = get_preview_link
+      @otel_state = otel_state
     end
 
     # Execute a shell command in the Sandbox
@@ -124,6 +128,17 @@ module Daytona
     #   end
     def get_session(session_id) = toolbox_api.get_session(session_id)
 
+    # Gets the Sandbox entrypoint session
+    #
+    # @return [DaytonaApiClient::Session] Entrypoint session information including session_id and commands
+    #
+    # @example
+    #   session = sandbox.process.get_entrypoint_session()
+    #   session.commands.each do |cmd|
+    #     puts "Command: #{cmd.command}"
+    #   end
+    def get_entrypoint_session = toolbox_api.get_entrypoint_session
+
     # Gets information about a specific command executed in a session
     #
     # @param session_id [String] Unique identifier of the session
@@ -165,7 +180,8 @@ module Daytona
     def execute_session_command(session_id:, req:) # rubocop:disable Metrics/MethodLength
       response = toolbox_api.session_execute_command(
         session_id,
-        DaytonaToolboxApiClient::SessionExecuteRequest.new(command: req.command, run_async: req.run_async)
+        DaytonaToolboxApiClient::SessionExecuteRequest.new(command: req.command, run_async: req.run_async,
+                                                           suppress_input_echo: req.suppress_input_echo)
       )
 
       stdout, stderr = Util.demux(response.output || '')
@@ -256,6 +272,87 @@ module Daytona
 
       # Wait for completion
       completion_queue.pop
+    end
+
+    # Get the sandbox entrypoint logs
+    #
+    # @return [Daytona::SessionCommandLogsResponse] Entrypoint logs including output, stdout, and stderr
+    #
+    # @example
+    #   logs = sandbox.process.get_entrypoint_logs()
+    #   puts "Command stdout: #{logs.stdout}"
+    #   puts "Command stderr: #{logs.stderr}"
+    def get_entrypoint_logs = parse_session_command_logs(toolbox_api.get_entrypoint_logs)
+
+    # Asynchronously retrieves and processes the sandbox entrypoint logs as they become available
+    #
+    # @param on_stdout [Proc] Callback function to handle stdout log chunks as they arrive
+    # @param on_stderr [Proc] Callback function to handle stderr log chunks as they arrive
+    # @return [WebSocket::Client::Simple::Client]
+    #
+    # @example
+    #   sandbox.process.get_entrypoint_logs_async(
+    #     on_stdout: ->(log) { puts "[STDOUT]: #{log}" },
+    #     on_stderr: ->(log) { puts "[STDERR]: #{log}" }
+    #   )
+    def get_entrypoint_logs_async(on_stdout:, on_stderr:) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+      preview_link = get_preview_link.call(WS_PORT)
+      url = URI.parse(preview_link.url)
+      url.scheme = url.scheme == 'https' ? 'wss' : 'ws'
+      url.path = '/process/session/entrypoint/logs'
+      url.query = 'follow=true'
+
+      completion_queue = Queue.new
+
+      ws = WebSocket::Client::Simple.connect(
+        url.to_s,
+        headers: toolbox_api.api_client.default_headers.dup.merge(
+          'X-Daytona-Preview-Token' => preview_link.token,
+          'Content-Type' => 'text/plain',
+          'Accept' => 'text/plain'
+        )
+      )
+
+      ws.on(:message) do |message|
+        if message.type == :close
+          ws.close
+          completion_queue.push(:close)
+        else
+          stdout, stderr = Util.demux(message.data.to_s)
+
+          on_stdout.call(stdout) unless stdout.empty?
+          on_stderr.call(stderr) unless stderr.empty?
+        end
+      end
+
+      ws.on(:close) do
+        completion_queue.push(:close)
+      end
+
+      ws.on(:error) do |e|
+        completion_queue.push(:error)
+        raise Sdk::Error, "WebSocket error: #{e.message}"
+      end
+
+      # Wait for completion
+      completion_queue.pop
+    end
+
+    # Sends input data to a command executed in a session
+    #
+    # This method allows you to send input to an interactive command running in a session,
+    # such as responding to prompts or providing data to stdin.
+    #
+    # @param session_id [String] Unique identifier of the session
+    # @param command_id [String] Unique identifier of the command
+    # @param data [String] Input data to send to the command
+    # @return [void]
+    def send_session_command_input(session_id:, command_id:, data:)
+      toolbox_api.send_input(
+        session_id,
+        command_id,
+        DaytonaToolboxApiClient::SessionSendInputRequest.new(data:)
+      )
     end
 
     #
@@ -431,7 +528,17 @@ module Daytona
       toolbox_api.get_pty_session(session_id)
     end
 
+    instrument :exec, :code_run, :create_session, :get_session, :get_session_command,
+               :execute_session_command, :get_session_command_logs, :get_session_command_logs_async,
+               :send_session_command_input, :list_sessions, :delete_session,
+               :create_pty_session, :connect_pty_session, :resize_pty_session,
+               :delete_pty_session, :list_pty_sessions, :get_pty_session_info,
+               component: 'Process'
+
     private
+
+    # @return [Daytona::OtelState, nil]
+    attr_reader :otel_state
 
     # Parse the output of a command to extract ExecutionArtifacts
     #

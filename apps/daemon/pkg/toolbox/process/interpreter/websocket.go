@@ -5,20 +5,26 @@ package interpreter
 
 import (
 	"encoding/json"
+	"log/slog"
 	"time"
 
+	"github.com/daytonaio/daemon/internal/util"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	log "github.com/sirupsen/logrus"
 )
 
 // attachWebSocket connects a WebSocket client to the interpreter context
 func (c *Context) attachWebSocket(ws *websocket.Conn) {
+	pongCh := util.SetupWSKeepAlive(ws, c.logger)
+
+	clientId := uuid.NewString()
 	cl := &wsClient{
-		id:   uuid.NewString(),
-		conn: ws,
-		send: make(chan wsFrame, 1024),
-		done: make(chan struct{}),
+		id:     clientId,
+		conn:   ws,
+		send:   make(chan wsFrame, 1024),
+		pongCh: pongCh,
+		done:   make(chan struct{}),
+		logger: c.logger.With(slog.String("clientId", clientId)),
 	}
 
 	c.mu.Lock()
@@ -28,9 +34,20 @@ func (c *Context) attachWebSocket(ws *websocket.Conn) {
 	c.client = cl
 	c.mu.Unlock()
 
-	log.Debugf("Client %s attached to interpreter context %s", cl.id, c.info.ID)
+	c.logger.Debug("Client attached to interpreter context", "clientId", cl.id, "contextId", c.info.ID)
 
 	go c.clientWriter(cl)
+	// Continuously read from the WebSocket so that gorilla/websocket's
+	// PingHandler is invoked for incoming ping frames. Without this,
+	// client keepalive pings go unanswered and the connection is closed
+	// with code 1011 after ~50s.
+	go func() {
+		for {
+			if _, _, err := ws.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
 
 	// Wait for clientWriter to exit (signals disconnection)
 	<-cl.done
@@ -42,7 +59,7 @@ func (c *Context) attachWebSocket(ws *websocket.Conn) {
 	c.mu.Unlock()
 
 	cl.close()
-	log.Debugf("Client %s detached from interpreter context %s", cl.id, c.info.ID)
+	c.logger.Debug("Client detached from interpreter context", "clientId", cl.id, "contextId", c.info.ID)
 }
 
 // clientWriter sends output messages to the WebSocket client
@@ -50,9 +67,18 @@ func (c *Context) clientWriter(cl *wsClient) {
 	defer close(cl.done)
 
 	for {
+		// Priority: always flush pending pong responses before writing data.
+		// This ensures keepalive pongs are never delayed by data writes.
+		util.WritePendingPongs(cl.conn, cl.pongCh, writeWait, cl.logger)
+
 		select {
 		case <-c.ctx.Done():
 			return
+		case pong := <-cl.pongCh:
+			// Pong arrived while waiting for data — write it immediately.
+			if err := cl.conn.WriteControl(websocket.PongMessage, pong, time.Now().Add(writeWait)); err != nil {
+				cl.logger.Debug("failed to write pong", "error", err)
+			}
 		case frame, ok := <-cl.send:
 			if !ok {
 				return
@@ -60,7 +86,7 @@ func (c *Context) clientWriter(cl *wsClient) {
 
 			err := cl.writeFrame(frame)
 			if err != nil {
-				log.Debugf("Failed to write frame: %v", err)
+				c.logger.Debug("Failed to write frame", "error", err)
 			}
 			if frame.close != nil {
 				return
@@ -82,7 +108,7 @@ func (c *Context) emitOutput(msg *OutputMessage) {
 	select {
 	case cl.send <- wsFrame{output: msg}:
 	default:
-		log.Debug("Client send channel full - closing slow consumer")
+		c.logger.Debug("Client send channel full - closing slow consumer")
 		cl.requestClose(websocket.ClosePolicyViolation, "slow consumer")
 
 		c.mu.Lock()
@@ -109,22 +135,14 @@ func (cl *wsClient) close() {
 			}
 		case <-timer.C:
 			// Timeout reached, proceed with closing
-			log.Debug("Timeout waiting for client writer to finish")
+			cl.logger.Debug("Timeout waiting for client writer to finish")
 		}
 
-		// Wait for client's close frame response (proper WebSocket handshake)
-		// Set a read deadline to prevent hanging if client doesn't respond
-		_ = cl.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-
-		// Drain any remaining messages until we get close frame or timeout
-		// This ensures proper WebSocket close handshake per RFC 6455
-		for {
-			_, _, err := cl.conn.NextReader()
-			if err != nil {
-				break
-			}
-		}
-
+		// Close the connection. The background read goroutine started in
+		// attachWebSocket is the sole reader — gorilla's default CloseHandler
+		// (invoked during ReadMessage) handles the RFC 6455 close handshake.
+		// We must not call NextReader/ReadMessage here to avoid violating
+		// gorilla's single-concurrent-reader rule.
 		_ = cl.conn.Close()
 	})
 }
@@ -163,7 +181,7 @@ func (cl *wsClient) requestClose(code int, message string) {
 	select {
 	case cl.send <- frame:
 	default:
-		log.Debug("Couldn't send close frame to client - closing connection")
+		cl.logger.Debug("Couldn't send close frame to client - closing connection")
 	}
 
 	cl.close()

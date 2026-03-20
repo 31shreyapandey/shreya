@@ -6,7 +6,7 @@
 import { Injectable, Logger, NotFoundException, OnApplicationShutdown } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Cron, CronExpression } from '@nestjs/schedule'
-import { In, LessThan, Not, Repository } from 'typeorm'
+import { In, IsNull, LessThan, Not, Repository } from 'typeorm'
 import { DockerRegistryService } from '../../docker-registry/services/docker-registry.service'
 import { Snapshot } from '../entities/snapshot.entity'
 import { SnapshotState } from '../enums/snapshot-state.enum'
@@ -30,14 +30,23 @@ import { setTimeout as sleep } from 'timers/promises'
 import { LogExecution } from '../../common/decorators/log-execution.decorator'
 import { WithInstrumentation } from '../../common/decorators/otel.decorator'
 import { RunnerAdapterFactory } from '../runner-adapter/runnerAdapter'
+import { SnapshotStateError } from '../errors/snapshot-state-error'
 import { SnapshotEvents } from '../constants/snapshot-events'
 import { SnapshotCreatedEvent } from '../events/snapshot-created.event'
 import { SnapshotService } from '../services/snapshot.service'
 import { OnAsyncEvent } from '../../common/decorators/on-async-event.decorator'
 import { parseDockerImage } from '../../common/utils/docker-image.util'
+import { SandboxState } from '../enums/sandbox-state.enum'
+import { SandboxDesiredState } from '../enums/sandbox-desired-state.enum'
+import { BackupState } from '../enums/backup-state.enum'
+import { BadRequestError } from '../../exceptions/bad-request.exception'
+import { SandboxRepository } from '../repositories/sandbox.repository'
+import { SnapshotInfoResponse } from '@daytonaio/runner-api-client'
+import { SnapshotActivatedEvent } from '../events/snapshot-activated.event'
 
 const SYNC_AGAIN = 'sync-again'
 const DONT_SYNC_AGAIN = 'dont-sync-again'
+const DEFAULT_SNAPSHOT_DEACTIVATION_TIMEOUT_MINUTES = 14 * 24 * 60 // 14 days
 type SyncState = typeof SYNC_AGAIN | typeof DONT_SYNC_AGAIN
 
 @Injectable()
@@ -57,6 +66,7 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
     private readonly snapshotRunnerRepository: Repository<SnapshotRunner>,
     @InjectRepository(Runner)
     private readonly runnerRepository: Repository<Runner>,
+    private readonly sandboxRepository: SandboxRepository,
     @InjectRepository(BuildInfo)
     private readonly buildInfoRepository: Repository<BuildInfo>,
     private readonly runnerService: RunnerService,
@@ -180,11 +190,7 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
   }
 
   async syncRunnerSnapshotState(snapshotRunner: SnapshotRunner): Promise<void> {
-    const runner = await this.runnerRepository.findOne({
-      where: {
-        id: snapshotRunner.runnerId,
-      },
-    })
+    const runner = await this.runnerService.findOne(snapshotRunner.runnerId)
     if (!runner) {
       //  cleanup the snapshot runner record if the runner is not found
       //  this can happen if the runner is deleted from the database without cleaning up the snapshot runners
@@ -309,7 +315,7 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
                 snapshot.ref,
                 SnapshotRunnerState.PULLING_SNAPSHOT,
               )
-              await this.pullSnapshotRunnerWithRetries(runner, snapshot.ref, internalRegistry)
+              await this.pullSnapshotRunner(runner, snapshot.ref, internalRegistry)
             } else if (snapshotRunner.state === SnapshotRunnerState.PULLING_SNAPSHOT) {
               await this.handleSnapshotRunnerStatePullingSnapshot(snapshotRunner, runner)
             }
@@ -332,7 +338,7 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
     }
   }
 
-  async pullSnapshotRunnerWithRetries(
+  async pullSnapshotRunner(
     runner: Runner,
     snapshotRef: string,
     registry?: DockerRegistry,
@@ -340,31 +346,24 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
     destinationRef?: string,
   ) {
     const runnerAdapter = await this.runnerAdapterFactory.create(runner)
-
-    let retries = 0
-    while (retries < 10) {
-      try {
-        await runnerAdapter.pullSnapshot(snapshotRef, registry, destinationRegistry, destinationRef)
-        return
-      } catch (err) {
-        if (err.code !== 'ECONNRESET') {
-          throw err
-        }
-        if (++retries >= 10) {
-          throw err
-        }
-        await new Promise((resolve) => setTimeout(resolve, retries * 1000))
-      }
-    }
+    // Runner returns immediately; polling for completion is handled by syncRunnerSnapshotStates cron
+    await runnerAdapter.pullSnapshot(snapshotRef, registry, destinationRegistry, destinationRef)
   }
 
   async handleSnapshotRunnerStatePullingSnapshot(snapshotRunner: SnapshotRunner, runner: Runner) {
     const runnerAdapter = await this.runnerAdapterFactory.create(runner)
-    const exists = await runnerAdapter.snapshotExists(snapshotRunner.snapshotRef)
-    if (exists) {
+    try {
+      await runnerAdapter.getSnapshotInfo(snapshotRunner.snapshotRef)
       snapshotRunner.state = SnapshotRunnerState.READY
       await this.snapshotRunnerRepository.save(snapshotRunner)
       return
+    } catch (err) {
+      if (err instanceof SnapshotStateError) {
+        snapshotRunner.state = SnapshotRunnerState.ERROR
+        snapshotRunner.errorReason = err.errorReason
+        await this.snapshotRunnerRepository.save(snapshotRunner)
+        return
+      }
     }
 
     const timeoutMinutes = 60
@@ -388,18 +387,152 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
           `No internal registry found for snapshot ${snapshotRunner.snapshotRef} in region ${runner.region}`,
         )
       }
-      await this.pullSnapshotRunnerWithRetries(runner, snapshotRunner.snapshotRef, internalRegistry)
+      await this.pullSnapshotRunner(runner, snapshotRunner.snapshotRef, internalRegistry)
       return
     }
   }
 
   async handleSnapshotRunnerStateBuildingSnapshot(snapshotRunner: SnapshotRunner, runner: Runner) {
     const runnerAdapter = await this.runnerAdapterFactory.create(runner)
-    const exists = await runnerAdapter.snapshotExists(snapshotRunner.snapshotRef)
-    if (exists) {
+    try {
+      await runnerAdapter.getSnapshotInfo(snapshotRunner.snapshotRef)
       snapshotRunner.state = SnapshotRunnerState.READY
       await this.snapshotRunnerRepository.save(snapshotRunner)
       return
+    } catch (err) {
+      if (err instanceof SnapshotStateError) {
+        snapshotRunner.state = SnapshotRunnerState.ERROR
+        snapshotRunner.errorReason = err.errorReason
+        await this.snapshotRunnerRepository.save(snapshotRunner)
+        return
+      }
+    }
+  }
+
+  // Pulls stopped sandboxes' backup snapshots to another runner to prepare for reassignment during draining
+  @Cron(CronExpression.EVERY_10_SECONDS, { name: 'migrate-draining-runner-snapshots', waitForCompletion: true })
+  @TrackJobExecution()
+  @LogExecution('migrate-draining-runner-snapshots')
+  @WithInstrumentation()
+  private async handleMigrateDrainingRunnerSnapshots() {
+    const lockKey = 'migrate-draining-runner-snapshots'
+    const hasLock = await this.redisLockProvider.lock(lockKey, 60)
+    if (!hasLock) {
+      return
+    }
+
+    try {
+      const drainingRunners = await this.runnerRepository.find({
+        where: {
+          draining: true,
+          state: RunnerState.READY,
+        },
+      })
+
+      this.logger.debug(`Checking ${drainingRunners.length} draining runners for snapshot migration`)
+
+      await Promise.allSettled(
+        drainingRunners.map(async (runner) => {
+          try {
+            const sandboxes = await this.sandboxRepository.find({
+              where: {
+                runnerId: runner.id,
+                state: SandboxState.STOPPED,
+                desiredState: SandboxDesiredState.STOPPED,
+                backupState: BackupState.COMPLETED,
+                backupSnapshot: Not(IsNull()),
+              },
+              take: 100,
+            })
+
+            this.logger.debug(
+              `Found ${sandboxes.length} eligible sandboxes on draining runner ${runner.id} for snapshot migration`,
+            )
+
+            await Promise.allSettled(
+              sandboxes.map(async (sandbox) => {
+                const sandboxLockKey = `draining-runner-snapshot-migration:${sandbox.id}`
+                const hasSandboxLock = await this.redisLockProvider.lock(sandboxLockKey, 3600)
+                if (!hasSandboxLock) {
+                  return
+                }
+
+                try {
+                  // Get an available runner in the same region with the same class
+                  const targetRunner = await this.runnerService.getRandomAvailableRunner({
+                    regions: [sandbox.region],
+                    sandboxClass: sandbox.class,
+                    excludedRunnerIds: [runner.id],
+                  })
+
+                  // Check if snapshot runner entry already exists
+                  const existingEntry = await this.runnerService.getSnapshotRunner(
+                    targetRunner.id,
+                    sandbox.backupSnapshot,
+                  )
+                  if (existingEntry) {
+                    if (existingEntry.state === SnapshotRunnerState.ERROR) {
+                      // Clean up the failed entry so we can retry
+                      this.logger.warn(
+                        `Removing ERROR snapshot runner entry ${existingEntry.id} for runner ${targetRunner.id} and snapshot ${sandbox.backupSnapshot} to allow retry`,
+                      )
+                      await this.snapshotRunnerRepository.delete(existingEntry.id)
+                    } else {
+                      this.logger.debug(
+                        `Snapshot runner entry already exists for runner ${targetRunner.id} and snapshot ${sandbox.backupSnapshot} (state: ${existingEntry.state})`,
+                      )
+                      // Do not unlock to avoid duplicates
+                      return
+                    }
+                  }
+
+                  // Find the backup registry to use as source for the pull
+                  const registry = sandbox.backupRegistryId
+                    ? await this.dockerRegistryService.findOne(sandbox.backupRegistryId)
+                    : await this.dockerRegistryService.findInternalRegistryBySnapshotRef(
+                        sandbox.backupSnapshot,
+                        targetRunner.region,
+                      )
+
+                  if (!registry) {
+                    this.logger.warn(
+                      `No registry found for backup snapshot ${sandbox.backupSnapshot} of sandbox ${sandbox.id}`,
+                    )
+                    await this.redisLockProvider.unlock(sandboxLockKey)
+                    return
+                  }
+
+                  // Create snapshot runner entry on the target runner
+                  await this.runnerService.createSnapshotRunnerEntry(
+                    targetRunner.id,
+                    sandbox.backupSnapshot,
+                    SnapshotRunnerState.PULLING_SNAPSHOT,
+                  )
+                  await this.pullSnapshotRunner(targetRunner, sandbox.backupSnapshot, registry)
+
+                  this.logger.log(
+                    `Created snapshot runner entry for sandbox ${sandbox.id} backup ${sandbox.backupSnapshot} on runner ${targetRunner.id} (migrating from draining runner ${runner.id})`,
+                  )
+                  await this.redisLockProvider.unlock(sandboxLockKey)
+                } catch (e) {
+                  if (e instanceof BadRequestError && e.message === 'No available runners') {
+                    this.logger.warn(
+                      `No available runners found in region ${sandbox.region} for sandbox ${sandbox.id} snapshot migration`,
+                    )
+                  } else {
+                    this.logger.error(`Error migrating snapshot for sandbox ${sandbox.id}`, e)
+                  }
+                  await this.redisLockProvider.unlock(sandboxLockKey)
+                }
+              }),
+            )
+          } catch (e) {
+            this.logger.error(`Error processing draining runner ${runner.id} for snapshot migration`, e)
+          }
+        }),
+      )
+    } finally {
+      await this.redisLockProvider.unlock(lockKey)
     }
   }
 
@@ -601,25 +734,21 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
       }
     }
 
-    const runner = await this.runnerRepository.findOneOrFail({
-      where: {
-        id: snapshot.initialRunnerId,
-      },
-    })
-
+    const runner = await this.runnerService.findOneOrFail(snapshot.initialRunnerId)
     const runnerAdapter = await this.runnerAdapterFactory.create(runner)
 
-    const initialImageRefOnRunner = snapshot.buildInfo
-      ? snapshot.buildInfo.snapshotRef
-      : this.getInitialRunnerSnapshotTag(snapshot)
+    const initialImageRefOnRunner = snapshot.buildInfo ? snapshot.buildInfo.snapshotRef : snapshot.ref
 
-    const exists = await runnerAdapter.snapshotExists(initialImageRefOnRunner)
-
-    if (!exists) {
-      return DONT_SYNC_AGAIN
+    let snapshotInfoResponse: SnapshotInfoResponse
+    try {
+      snapshotInfoResponse = await runnerAdapter.getSnapshotInfo(initialImageRefOnRunner)
+    } catch (error) {
+      if (error instanceof SnapshotStateError) {
+        throw error
+      } else {
+        return DONT_SYNC_AGAIN
+      }
     }
-
-    const snapshotInfoResponse = await runnerAdapter.getSnapshotInfo(initialImageRefOnRunner)
 
     const internalRegistry = await this.dockerRegistryService.getAvailableInternalRegistry(runner.region)
     if (!internalRegistry) {
@@ -718,47 +847,20 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
     }
     const destinationRegistry = await this.dockerRegistryService.getAvailableInternalRegistry(runner.region)
 
-    // Using image name for pull instead of the ref
+    // Fire pull request (runner returns 202 immediately)
+    // Post-processing (digest, cleanup) is handled by handleCheckInitialRunnerSnapshot on the next poll cycle
     try {
-      // If snapshot already has the designated ref from the manifest, pass it, otherwise let the runner build it
-      await this.pullSnapshotRunnerWithRetries(
+      await this.pullSnapshotRunner(
         runner,
         snapshot.imageName,
         sourceRegistry,
         destinationRegistry ?? undefined,
         snapshot.ref ? snapshot.ref : undefined,
       )
-
-      // Tag image to org and creation timestamp for future use
-      const runnerAdapter = await this.runnerAdapterFactory.create(runner)
-
-      const exists = await runnerAdapter.snapshotExists(snapshot.imageName)
-      if (!exists) {
-        return DONT_SYNC_AGAIN
-      }
-
-      // Best-effort cleanup of the original tag
-      // Only if there is no other snapshot in a processing state that uses the same image
-      try {
-        const anotherSnapshot = await this.snapshotRepository.findOne({
-          where: {
-            name: snapshot.imageName,
-            state: Not(In([SnapshotState.ACTIVE, SnapshotState.INACTIVE])),
-          },
-        })
-        if (!anotherSnapshot) {
-          await runnerAdapter.removeSnapshot(snapshot.imageName)
-        }
-      } catch (err) {
-        this.logger.error(`Failed to cleanup original tag ${snapshot.imageName}: ${fromAxiosError(err)}`)
-      }
     } catch (err) {
-      if (err.code !== 'ECONNRESET') {
-        await this.updateSnapshotState(snapshot.id, SnapshotState.ERROR, err.message)
-        throw err
-      }
-      // TODO: check if retry
-      return
+      // Validation errors are still returned synchronously
+      await this.updateSnapshotState(snapshot.id, SnapshotState.ERROR, err.message)
+      throw err
     }
   }
 
@@ -774,6 +876,7 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
       const runnerAdapter = await this.runnerAdapterFactory.create(runner)
 
       registry.url = registry.url.replace(/^(https?:\/\/)/, '')
+      // Runner returns immediately; polling for completion is handled by handleCheckInitialRunnerSnapshot
       await runnerAdapter.buildSnapshot(
         snapshot.buildInfo,
         snapshot.organizationId,
@@ -782,11 +885,6 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
         true,
       )
     } catch (err) {
-      if (err.code === 'ECONNRESET') {
-        // Connection reset, retry later
-        return
-      }
-
       this.logger.error(`Error building snapshot ${snapshot.name}: ${fromAxiosError(err)}`)
       await this.updateSnapshotState(snapshot.id, SnapshotState.BUILD_FAILED, fromAxiosError(err).message)
     }
@@ -823,11 +921,7 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
       snapshot.initialRunnerId = initialRunner.id
       await this.snapshotRepository.save(snapshot)
     } else {
-      initialRunner = await this.runnerRepository.findOneOrFail({
-        where: {
-          id: snapshot.initialRunnerId,
-        },
-      })
+      initialRunner = await this.runnerService.findOneOrFail(snapshot.initialRunnerId)
     }
 
     if (snapshot.buildInfo) {
@@ -883,6 +977,10 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
   private async updateSnapshotState(snapshotId: string, state: SnapshotState, errorReason?: string) {
     const partialUpdate: Partial<Snapshot> = {
       state,
+    }
+
+    if (state === SnapshotState.ACTIVE) {
+      partialUpdate.lastUsedAt = new Date()
     }
 
     if (errorReason !== undefined) {
@@ -954,28 +1052,24 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
     }
 
     try {
-      const twoWeeksAgo = new Date(Date.now() - 14 * 1000 * 60 * 60 * 24)
+      const cutoff = `NOW() - INTERVAL '1 minute' * COALESCE(org."snapshot_deactivation_timeout_minutes", ${DEFAULT_SNAPSHOT_DEACTIVATION_TIMEOUT_MINUTES})`
 
       const oldSnapshots = await this.snapshotRepository
         .createQueryBuilder('snapshot')
+        .leftJoin('organization', 'org', `org."id" = snapshot."organizationId"`)
         .where('snapshot.general = false')
         .andWhere('snapshot.state = :snapshotState', { snapshotState: SnapshotState.ACTIVE })
-        .andWhere('(snapshot."lastUsedAt" IS NULL OR snapshot."lastUsedAt" < :twoWeeksAgo)', { twoWeeksAgo })
-        .andWhere('snapshot."createdAt" < :twoWeeksAgo', { twoWeeksAgo })
+        .andWhere(`(snapshot."lastUsedAt" IS NULL OR snapshot."lastUsedAt" < ${cutoff})`)
+        .andWhere(`snapshot."createdAt" < ${cutoff}`)
         .andWhere(
-          () => {
-            const query = this.snapshotRepository
-              .createQueryBuilder('s')
-              .select('1')
-              .where('s."ref" = snapshot."ref"')
-              .andWhere('s.state = :activeState')
-              .andWhere('(s."lastUsedAt" >= :twoWeeksAgo OR s."createdAt" >= :twoWeeksAgo)')
-
-            return `NOT EXISTS (${query.getQuery()})`
-          },
+          `NOT EXISTS (
+            SELECT 1 FROM snapshot s
+            WHERE s."ref" = snapshot."ref"
+            AND s.state = :activeState
+            AND (s."lastUsedAt" >= ${cutoff} OR s."createdAt" >= ${cutoff})
+          )`,
           {
             activeState: SnapshotState.ACTIVE,
-            twoWeeksAgo,
           },
         )
         .take(100)
@@ -1123,24 +1217,17 @@ export class SnapshotManager implements TrackableJobExecutions, OnApplicationShu
     }
   }
 
-  private getInitialRunnerSnapshotTag(snapshot: Snapshot) {
-    // Extract the base image name without any tag or digest
-    let baseImageName = snapshot.imageName
-    const colonIndex = baseImageName.indexOf(':')
-    if (colonIndex !== -1) {
-      baseImageName = baseImageName.substring(0, colonIndex)
-    }
-    const atIndex = baseImageName.indexOf('@')
-    if (atIndex !== -1) {
-      baseImageName = baseImageName.substring(0, atIndex)
-    }
-    return `${baseImageName}-${snapshot.id}-${snapshot.createdAt.getTime()}:daytona`
-  }
-
   @OnAsyncEvent({
     event: SnapshotEvents.CREATED,
   })
   private async handleSnapshotCreatedEvent(event: SnapshotCreatedEvent) {
+    await this.syncSnapshotState(event.snapshot.id)
+  }
+
+  @OnAsyncEvent({
+    event: SnapshotEvents.ACTIVATED,
+  })
+  private async handleSnapshotActivatedEvent(event: SnapshotActivatedEvent) {
     await this.syncSnapshotState(event.snapshot.id)
   }
 }

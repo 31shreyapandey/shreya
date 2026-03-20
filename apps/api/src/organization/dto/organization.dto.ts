@@ -79,6 +79,12 @@ export class OrganizationDto {
   maxDiskPerSandbox: number
 
   @ApiProperty({
+    description: 'Time in minutes before an unused snapshot is deactivated',
+    default: 20160,
+  })
+  snapshotDeactivationTimeoutMinutes: number
+
+  @ApiProperty({
     description: 'Sandbox default network block all',
   })
   sandboxLimitedNetworkEgress: boolean
@@ -107,7 +113,41 @@ export class OrganizationDto {
   })
   sandboxLifecycleRateLimit: number | null
 
+  @ApiProperty({
+    description: 'Experimental configuration',
+  })
+  experimentalConfig: Record<string, any> | null
+
+  @ApiProperty({
+    description: 'Authenticated rate limit TTL in seconds',
+    nullable: true,
+  })
+  authenticatedRateLimitTtlSeconds: number | null
+
+  @ApiProperty({
+    description: 'Sandbox create rate limit TTL in seconds',
+    nullable: true,
+  })
+  sandboxCreateRateLimitTtlSeconds: number | null
+
+  @ApiProperty({
+    description: 'Sandbox lifecycle rate limit TTL in seconds',
+    nullable: true,
+  })
+  sandboxLifecycleRateLimitTtlSeconds: number | null
+
   static fromOrganization(organization: Organization): OrganizationDto {
+    const experimentalConfig = organization._experimentalConfig
+    if (experimentalConfig && experimentalConfig.otel && experimentalConfig.otel.headers) {
+      experimentalConfig.otel.headers = Object.entries(experimentalConfig.otel.headers).reduce(
+        (acc, [key]) => {
+          acc[key] = '******'
+          return acc
+        },
+        {} as Record<string, string>,
+      )
+    }
+
     const dto: OrganizationDto = {
       id: organization.id,
       name: organization.name,
@@ -123,11 +163,16 @@ export class OrganizationDto {
       maxCpuPerSandbox: organization.maxCpuPerSandbox,
       maxMemoryPerSandbox: organization.maxMemoryPerSandbox,
       maxDiskPerSandbox: organization.maxDiskPerSandbox,
+      snapshotDeactivationTimeoutMinutes: organization.snapshotDeactivationTimeoutMinutes,
       sandboxLimitedNetworkEgress: organization.sandboxLimitedNetworkEgress,
       defaultRegionId: organization.defaultRegionId,
       authenticatedRateLimit: organization.authenticatedRateLimit,
       sandboxCreateRateLimit: organization.sandboxCreateRateLimit,
       sandboxLifecycleRateLimit: organization.sandboxLifecycleRateLimit,
+      experimentalConfig,
+      authenticatedRateLimitTtlSeconds: organization.authenticatedRateLimitTtlSeconds,
+      sandboxCreateRateLimitTtlSeconds: organization.sandboxCreateRateLimitTtlSeconds,
+      sandboxLifecycleRateLimitTtlSeconds: organization.sandboxLifecycleRateLimitTtlSeconds,
     }
 
     return dto

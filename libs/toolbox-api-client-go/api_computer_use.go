@@ -17,17 +17,19 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"os"
 )
+
 
 type ComputerUseAPI interface {
 
 	/*
-		Click Click mouse button
+	Click Click mouse button
 
-		Click the mouse button at the specified coordinates
+	Click the mouse button at the specified coordinates
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIClickRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIClickRequest
 	*/
 	Click(ctx context.Context) ComputerUseAPIClickRequest
 
@@ -36,12 +38,41 @@ type ComputerUseAPI interface {
 	ClickExecute(r ComputerUseAPIClickRequest) (*MouseClickResponse, *http.Response, error)
 
 	/*
-		Drag Drag mouse
+	DeleteRecording Delete a recording
 
-		Drag the mouse from start to end coordinates
+	Delete a recording file by ID
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIDragRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param id Recording ID
+	@return ComputerUseAPIDeleteRecordingRequest
+	*/
+	DeleteRecording(ctx context.Context, id string) ComputerUseAPIDeleteRecordingRequest
+
+	// DeleteRecordingExecute executes the request
+	DeleteRecordingExecute(r ComputerUseAPIDeleteRecordingRequest) (*http.Response, error)
+
+	/*
+	DownloadRecording Download a recording
+
+	Download a recording by providing its ID
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param id Recording ID
+	@return ComputerUseAPIDownloadRecordingRequest
+	*/
+	DownloadRecording(ctx context.Context, id string) ComputerUseAPIDownloadRecordingRequest
+
+	// DownloadRecordingExecute executes the request
+	//  @return *os.File
+	DownloadRecordingExecute(r ComputerUseAPIDownloadRecordingRequest) (*os.File, *http.Response, error)
+
+	/*
+	Drag Drag mouse
+
+	Drag the mouse from start to end coordinates
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIDragRequest
 	*/
 	Drag(ctx context.Context) ComputerUseAPIDragRequest
 
@@ -50,12 +81,12 @@ type ComputerUseAPI interface {
 	DragExecute(r ComputerUseAPIDragRequest) (*MouseDragResponse, *http.Response, error)
 
 	/*
-		GetComputerUseStatus Get computer use process status
+	GetComputerUseStatus Get computer use process status
 
-		Get the status of all computer use processes
+	Get the status of all computer use processes
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIGetComputerUseStatusRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIGetComputerUseStatusRequest
 	*/
 	GetComputerUseStatus(ctx context.Context) ComputerUseAPIGetComputerUseStatusRequest
 
@@ -64,12 +95,12 @@ type ComputerUseAPI interface {
 	GetComputerUseStatusExecute(r ComputerUseAPIGetComputerUseStatusRequest) (*ComputerUseStatusResponse, *http.Response, error)
 
 	/*
-		GetComputerUseSystemStatus Get computer use status
+	GetComputerUseSystemStatus Get computer use status
 
-		Get the current status of the computer use system
+	Get the current status of the computer use system
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIGetComputerUseSystemStatusRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIGetComputerUseSystemStatusRequest
 	*/
 	GetComputerUseSystemStatus(ctx context.Context) ComputerUseAPIGetComputerUseSystemStatusRequest
 
@@ -78,12 +109,12 @@ type ComputerUseAPI interface {
 	GetComputerUseSystemStatusExecute(r ComputerUseAPIGetComputerUseSystemStatusRequest) (*ComputerUseStatusResponse, *http.Response, error)
 
 	/*
-		GetDisplayInfo Get display information
+	GetDisplayInfo Get display information
 
-		Get information about all available displays
+	Get information about all available displays
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIGetDisplayInfoRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIGetDisplayInfoRequest
 	*/
 	GetDisplayInfo(ctx context.Context) ComputerUseAPIGetDisplayInfoRequest
 
@@ -92,12 +123,12 @@ type ComputerUseAPI interface {
 	GetDisplayInfoExecute(r ComputerUseAPIGetDisplayInfoRequest) (*DisplayInfoResponse, *http.Response, error)
 
 	/*
-		GetMousePosition Get mouse position
+	GetMousePosition Get mouse position
 
-		Get the current mouse cursor position
+	Get the current mouse cursor position
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIGetMousePositionRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIGetMousePositionRequest
 	*/
 	GetMousePosition(ctx context.Context) ComputerUseAPIGetMousePositionRequest
 
@@ -106,13 +137,13 @@ type ComputerUseAPI interface {
 	GetMousePositionExecute(r ComputerUseAPIGetMousePositionRequest) (*MousePositionResponse, *http.Response, error)
 
 	/*
-		GetProcessErrors Get process errors
+	GetProcessErrors Get process errors
 
-		Get errors for a specific computer use process
+	Get errors for a specific computer use process
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@param processName Process name to get errors for
-		@return ComputerUseAPIGetProcessErrorsRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param processName Process name to get errors for
+	@return ComputerUseAPIGetProcessErrorsRequest
 	*/
 	GetProcessErrors(ctx context.Context, processName string) ComputerUseAPIGetProcessErrorsRequest
 
@@ -121,13 +152,13 @@ type ComputerUseAPI interface {
 	GetProcessErrorsExecute(r ComputerUseAPIGetProcessErrorsRequest) (*ProcessErrorsResponse, *http.Response, error)
 
 	/*
-		GetProcessLogs Get process logs
+	GetProcessLogs Get process logs
 
-		Get logs for a specific computer use process
+	Get logs for a specific computer use process
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@param processName Process name to get logs for
-		@return ComputerUseAPIGetProcessLogsRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param processName Process name to get logs for
+	@return ComputerUseAPIGetProcessLogsRequest
 	*/
 	GetProcessLogs(ctx context.Context, processName string) ComputerUseAPIGetProcessLogsRequest
 
@@ -136,13 +167,13 @@ type ComputerUseAPI interface {
 	GetProcessLogsExecute(r ComputerUseAPIGetProcessLogsRequest) (*ProcessLogsResponse, *http.Response, error)
 
 	/*
-		GetProcessStatus Get specific process status
+	GetProcessStatus Get specific process status
 
-		Check if a specific computer use process is running
+	Check if a specific computer use process is running
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@param processName Process name to check
-		@return ComputerUseAPIGetProcessStatusRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param processName Process name to check
+	@return ComputerUseAPIGetProcessStatusRequest
 	*/
 	GetProcessStatus(ctx context.Context, processName string) ComputerUseAPIGetProcessStatusRequest
 
@@ -151,12 +182,27 @@ type ComputerUseAPI interface {
 	GetProcessStatusExecute(r ComputerUseAPIGetProcessStatusRequest) (*ProcessStatusResponse, *http.Response, error)
 
 	/*
-		GetWindows Get windows information
+	GetRecording Get recording details
 
-		Get information about all open windows
+	Get details of a specific recording by ID
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIGetWindowsRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param id Recording ID
+	@return ComputerUseAPIGetRecordingRequest
+	*/
+	GetRecording(ctx context.Context, id string) ComputerUseAPIGetRecordingRequest
+
+	// GetRecordingExecute executes the request
+	//  @return Recording
+	GetRecordingExecute(r ComputerUseAPIGetRecordingRequest) (*Recording, *http.Response, error)
+
+	/*
+	GetWindows Get windows information
+
+	Get information about all open windows
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIGetWindowsRequest
 	*/
 	GetWindows(ctx context.Context) ComputerUseAPIGetWindowsRequest
 
@@ -165,12 +211,26 @@ type ComputerUseAPI interface {
 	GetWindowsExecute(r ComputerUseAPIGetWindowsRequest) (*WindowsResponse, *http.Response, error)
 
 	/*
-		MoveMouse Move mouse cursor
+	ListRecordings List all recordings
 
-		Move the mouse cursor to the specified coordinates
+	Get a list of all recordings (active and completed)
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIMoveMouseRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIListRecordingsRequest
+	*/
+	ListRecordings(ctx context.Context) ComputerUseAPIListRecordingsRequest
+
+	// ListRecordingsExecute executes the request
+	//  @return ListRecordingsResponse
+	ListRecordingsExecute(r ComputerUseAPIListRecordingsRequest) (*ListRecordingsResponse, *http.Response, error)
+
+	/*
+	MoveMouse Move mouse cursor
+
+	Move the mouse cursor to the specified coordinates
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIMoveMouseRequest
 	*/
 	MoveMouse(ctx context.Context) ComputerUseAPIMoveMouseRequest
 
@@ -179,12 +239,12 @@ type ComputerUseAPI interface {
 	MoveMouseExecute(r ComputerUseAPIMoveMouseRequest) (*MousePositionResponse, *http.Response, error)
 
 	/*
-		PressHotkey Press hotkey
+	PressHotkey Press hotkey
 
-		Press a hotkey combination (e.g., ctrl+c, cmd+v)
+	Press a hotkey combination (e.g., ctrl+c, cmd+v)
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIPressHotkeyRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIPressHotkeyRequest
 	*/
 	PressHotkey(ctx context.Context) ComputerUseAPIPressHotkeyRequest
 
@@ -193,12 +253,12 @@ type ComputerUseAPI interface {
 	PressHotkeyExecute(r ComputerUseAPIPressHotkeyRequest) (map[string]interface{}, *http.Response, error)
 
 	/*
-		PressKey Press key
+	PressKey Press key
 
-		Press a key with optional modifiers
+	Press a key with optional modifiers
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIPressKeyRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIPressKeyRequest
 	*/
 	PressKey(ctx context.Context) ComputerUseAPIPressKeyRequest
 
@@ -207,13 +267,13 @@ type ComputerUseAPI interface {
 	PressKeyExecute(r ComputerUseAPIPressKeyRequest) (map[string]interface{}, *http.Response, error)
 
 	/*
-		RestartProcess Restart specific process
+	RestartProcess Restart specific process
 
-		Restart a specific computer use process
+	Restart a specific computer use process
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@param processName Process name to restart
-		@return ComputerUseAPIRestartProcessRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param processName Process name to restart
+	@return ComputerUseAPIRestartProcessRequest
 	*/
 	RestartProcess(ctx context.Context, processName string) ComputerUseAPIRestartProcessRequest
 
@@ -222,12 +282,12 @@ type ComputerUseAPI interface {
 	RestartProcessExecute(r ComputerUseAPIRestartProcessRequest) (*ProcessRestartResponse, *http.Response, error)
 
 	/*
-		Scroll Scroll mouse wheel
+	Scroll Scroll mouse wheel
 
-		Scroll the mouse wheel at the specified coordinates
+	Scroll the mouse wheel at the specified coordinates
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIScrollRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIScrollRequest
 	*/
 	Scroll(ctx context.Context) ComputerUseAPIScrollRequest
 
@@ -236,12 +296,12 @@ type ComputerUseAPI interface {
 	ScrollExecute(r ComputerUseAPIScrollRequest) (*ScrollResponse, *http.Response, error)
 
 	/*
-		StartComputerUse Start computer use processes
+	StartComputerUse Start computer use processes
 
-		Start all computer use processes and return their status
+	Start all computer use processes and return their status
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIStartComputerUseRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIStartComputerUseRequest
 	*/
 	StartComputerUse(ctx context.Context) ComputerUseAPIStartComputerUseRequest
 
@@ -250,12 +310,26 @@ type ComputerUseAPI interface {
 	StartComputerUseExecute(r ComputerUseAPIStartComputerUseRequest) (*ComputerUseStartResponse, *http.Response, error)
 
 	/*
-		StopComputerUse Stop computer use processes
+	StartRecording Start a new recording
 
-		Stop all computer use processes and return their status
+	Start a new screen recording session
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPIStopComputerUseRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIStartRecordingRequest
+	*/
+	StartRecording(ctx context.Context) ComputerUseAPIStartRecordingRequest
+
+	// StartRecordingExecute executes the request
+	//  @return Recording
+	StartRecordingExecute(r ComputerUseAPIStartRecordingRequest) (*Recording, *http.Response, error)
+
+	/*
+	StopComputerUse Stop computer use processes
+
+	Stop all computer use processes and return their status
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIStopComputerUseRequest
 	*/
 	StopComputerUse(ctx context.Context) ComputerUseAPIStopComputerUseRequest
 
@@ -264,12 +338,26 @@ type ComputerUseAPI interface {
 	StopComputerUseExecute(r ComputerUseAPIStopComputerUseRequest) (*ComputerUseStopResponse, *http.Response, error)
 
 	/*
-		TakeCompressedRegionScreenshot Take a compressed region screenshot
+	StopRecording Stop a recording
 
-		Take a compressed screenshot of a specific region of the screen
+	Stop an active screen recording session
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPITakeCompressedRegionScreenshotRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPIStopRecordingRequest
+	*/
+	StopRecording(ctx context.Context) ComputerUseAPIStopRecordingRequest
+
+	// StopRecordingExecute executes the request
+	//  @return Recording
+	StopRecordingExecute(r ComputerUseAPIStopRecordingRequest) (*Recording, *http.Response, error)
+
+	/*
+	TakeCompressedRegionScreenshot Take a compressed region screenshot
+
+	Take a compressed screenshot of a specific region of the screen
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPITakeCompressedRegionScreenshotRequest
 	*/
 	TakeCompressedRegionScreenshot(ctx context.Context) ComputerUseAPITakeCompressedRegionScreenshotRequest
 
@@ -278,12 +366,12 @@ type ComputerUseAPI interface {
 	TakeCompressedRegionScreenshotExecute(r ComputerUseAPITakeCompressedRegionScreenshotRequest) (*ScreenshotResponse, *http.Response, error)
 
 	/*
-		TakeCompressedScreenshot Take a compressed screenshot
+	TakeCompressedScreenshot Take a compressed screenshot
 
-		Take a compressed screenshot of the entire screen
+	Take a compressed screenshot of the entire screen
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPITakeCompressedScreenshotRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPITakeCompressedScreenshotRequest
 	*/
 	TakeCompressedScreenshot(ctx context.Context) ComputerUseAPITakeCompressedScreenshotRequest
 
@@ -292,12 +380,12 @@ type ComputerUseAPI interface {
 	TakeCompressedScreenshotExecute(r ComputerUseAPITakeCompressedScreenshotRequest) (*ScreenshotResponse, *http.Response, error)
 
 	/*
-		TakeRegionScreenshot Take a region screenshot
+	TakeRegionScreenshot Take a region screenshot
 
-		Take a screenshot of a specific region of the screen
+	Take a screenshot of a specific region of the screen
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPITakeRegionScreenshotRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPITakeRegionScreenshotRequest
 	*/
 	TakeRegionScreenshot(ctx context.Context) ComputerUseAPITakeRegionScreenshotRequest
 
@@ -306,12 +394,12 @@ type ComputerUseAPI interface {
 	TakeRegionScreenshotExecute(r ComputerUseAPITakeRegionScreenshotRequest) (*ScreenshotResponse, *http.Response, error)
 
 	/*
-		TakeScreenshot Take a screenshot
+	TakeScreenshot Take a screenshot
 
-		Take a screenshot of the entire screen
+	Take a screenshot of the entire screen
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPITakeScreenshotRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPITakeScreenshotRequest
 	*/
 	TakeScreenshot(ctx context.Context) ComputerUseAPITakeScreenshotRequest
 
@@ -320,12 +408,12 @@ type ComputerUseAPI interface {
 	TakeScreenshotExecute(r ComputerUseAPITakeScreenshotRequest) (*ScreenshotResponse, *http.Response, error)
 
 	/*
-		TypeText Type text
+	TypeText Type text
 
-		Type text with optional delay between keystrokes
+	Type text with optional delay between keystrokes
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return ComputerUseAPITypeTextRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ComputerUseAPITypeTextRequest
 	*/
 	TypeText(ctx context.Context) ComputerUseAPITypeTextRequest
 
@@ -338,9 +426,9 @@ type ComputerUseAPI interface {
 type ComputerUseAPIService service
 
 type ComputerUseAPIClickRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
-	request    *MouseClickRequest
+	request *MouseClickRequest
 }
 
 // Mouse click request
@@ -358,25 +446,24 @@ Click Click mouse button
 
 Click the mouse button at the specified coordinates
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIClickRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIClickRequest
 */
 func (a *ComputerUseAPIService) Click(ctx context.Context) ComputerUseAPIClickRequest {
 	return ComputerUseAPIClickRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return MouseClickResponse
+//  @return MouseClickResponse
 func (a *ComputerUseAPIService) ClickExecute(r ComputerUseAPIClickRequest) (*MouseClickResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodPost
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *MouseClickResponse
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *MouseClickResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.Click")
@@ -449,10 +536,258 @@ func (a *ComputerUseAPIService) ClickExecute(r ComputerUseAPIClickRequest) (*Mou
 	return localVarReturnValue, localVarHTTPResponse, nil
 }
 
-type ComputerUseAPIDragRequest struct {
-	ctx        context.Context
+type ComputerUseAPIDeleteRecordingRequest struct {
+	ctx context.Context
 	ApiService ComputerUseAPI
-	request    *MouseDragRequest
+	id string
+}
+
+func (r ComputerUseAPIDeleteRecordingRequest) Execute() (*http.Response, error) {
+	return r.ApiService.DeleteRecordingExecute(r)
+}
+
+/*
+DeleteRecording Delete a recording
+
+Delete a recording file by ID
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param id Recording ID
+ @return ComputerUseAPIDeleteRecordingRequest
+*/
+func (a *ComputerUseAPIService) DeleteRecording(ctx context.Context, id string) ComputerUseAPIDeleteRecordingRequest {
+	return ComputerUseAPIDeleteRecordingRequest{
+		ApiService: a,
+		ctx: ctx,
+		id: id,
+	}
+}
+
+// Execute executes the request
+func (a *ComputerUseAPIService) DeleteRecordingExecute(r ComputerUseAPIDeleteRecordingRequest) (*http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodDelete
+		localVarPostBody     interface{}
+		formFiles            []formFile
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.DeleteRecording")
+	if err != nil {
+		return nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/computeruse/recordings/{id}"
+	localVarPath = strings.Replace(localVarPath, "{"+"id"+"}", url.PathEscape(parameterValueToString(r.id, "id")), -1)
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"*/*"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		if localVarHTTPResponse.StatusCode == 400 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+			return localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 404 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+			return localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 500 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+		}
+		return localVarHTTPResponse, newErr
+	}
+
+	return localVarHTTPResponse, nil
+}
+
+type ComputerUseAPIDownloadRecordingRequest struct {
+	ctx context.Context
+	ApiService ComputerUseAPI
+	id string
+}
+
+func (r ComputerUseAPIDownloadRecordingRequest) Execute() (*os.File, *http.Response, error) {
+	return r.ApiService.DownloadRecordingExecute(r)
+}
+
+/*
+DownloadRecording Download a recording
+
+Download a recording by providing its ID
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param id Recording ID
+ @return ComputerUseAPIDownloadRecordingRequest
+*/
+func (a *ComputerUseAPIService) DownloadRecording(ctx context.Context, id string) ComputerUseAPIDownloadRecordingRequest {
+	return ComputerUseAPIDownloadRecordingRequest{
+		ApiService: a,
+		ctx: ctx,
+		id: id,
+	}
+}
+
+// Execute executes the request
+//  @return *os.File
+func (a *ComputerUseAPIService) DownloadRecordingExecute(r ComputerUseAPIDownloadRecordingRequest) (*os.File, *http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *os.File
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.DownloadRecording")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/computeruse/recordings/{id}/download"
+	localVarPath = strings.Replace(localVarPath, "{"+"id"+"}", url.PathEscape(parameterValueToString(r.id, "id")), -1)
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/octet-stream"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		if localVarHTTPResponse.StatusCode == 404 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 500 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
+type ComputerUseAPIDragRequest struct {
+	ctx context.Context
+	ApiService ComputerUseAPI
+	request *MouseDragRequest
 }
 
 // Mouse drag request
@@ -470,25 +805,24 @@ Drag Drag mouse
 
 Drag the mouse from start to end coordinates
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIDragRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIDragRequest
 */
 func (a *ComputerUseAPIService) Drag(ctx context.Context) ComputerUseAPIDragRequest {
 	return ComputerUseAPIDragRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return MouseDragResponse
+//  @return MouseDragResponse
 func (a *ComputerUseAPIService) DragExecute(r ComputerUseAPIDragRequest) (*MouseDragResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodPost
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *MouseDragResponse
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *MouseDragResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.Drag")
@@ -562,7 +896,7 @@ func (a *ComputerUseAPIService) DragExecute(r ComputerUseAPIDragRequest) (*Mouse
 }
 
 type ComputerUseAPIGetComputerUseStatusRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
 }
 
@@ -575,25 +909,24 @@ GetComputerUseStatus Get computer use process status
 
 Get the status of all computer use processes
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIGetComputerUseStatusRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIGetComputerUseStatusRequest
 */
 func (a *ComputerUseAPIService) GetComputerUseStatus(ctx context.Context) ComputerUseAPIGetComputerUseStatusRequest {
 	return ComputerUseAPIGetComputerUseStatusRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ComputerUseStatusResponse
+//  @return ComputerUseStatusResponse
 func (a *ComputerUseAPIService) GetComputerUseStatusExecute(r ComputerUseAPIGetComputerUseStatusRequest) (*ComputerUseStatusResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ComputerUseStatusResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ComputerUseStatusResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.GetComputerUseStatus")
@@ -662,7 +995,7 @@ func (a *ComputerUseAPIService) GetComputerUseStatusExecute(r ComputerUseAPIGetC
 }
 
 type ComputerUseAPIGetComputerUseSystemStatusRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
 }
 
@@ -675,25 +1008,24 @@ GetComputerUseSystemStatus Get computer use status
 
 Get the current status of the computer use system
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIGetComputerUseSystemStatusRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIGetComputerUseSystemStatusRequest
 */
 func (a *ComputerUseAPIService) GetComputerUseSystemStatus(ctx context.Context) ComputerUseAPIGetComputerUseSystemStatusRequest {
 	return ComputerUseAPIGetComputerUseSystemStatusRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ComputerUseStatusResponse
+//  @return ComputerUseStatusResponse
 func (a *ComputerUseAPIService) GetComputerUseSystemStatusExecute(r ComputerUseAPIGetComputerUseSystemStatusRequest) (*ComputerUseStatusResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ComputerUseStatusResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ComputerUseStatusResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.GetComputerUseSystemStatus")
@@ -762,7 +1094,7 @@ func (a *ComputerUseAPIService) GetComputerUseSystemStatusExecute(r ComputerUseA
 }
 
 type ComputerUseAPIGetDisplayInfoRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
 }
 
@@ -775,25 +1107,24 @@ GetDisplayInfo Get display information
 
 Get information about all available displays
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIGetDisplayInfoRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIGetDisplayInfoRequest
 */
 func (a *ComputerUseAPIService) GetDisplayInfo(ctx context.Context) ComputerUseAPIGetDisplayInfoRequest {
 	return ComputerUseAPIGetDisplayInfoRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return DisplayInfoResponse
+//  @return DisplayInfoResponse
 func (a *ComputerUseAPIService) GetDisplayInfoExecute(r ComputerUseAPIGetDisplayInfoRequest) (*DisplayInfoResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *DisplayInfoResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *DisplayInfoResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.GetDisplayInfo")
@@ -862,7 +1193,7 @@ func (a *ComputerUseAPIService) GetDisplayInfoExecute(r ComputerUseAPIGetDisplay
 }
 
 type ComputerUseAPIGetMousePositionRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
 }
 
@@ -875,25 +1206,24 @@ GetMousePosition Get mouse position
 
 Get the current mouse cursor position
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIGetMousePositionRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIGetMousePositionRequest
 */
 func (a *ComputerUseAPIService) GetMousePosition(ctx context.Context) ComputerUseAPIGetMousePositionRequest {
 	return ComputerUseAPIGetMousePositionRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return MousePositionResponse
+//  @return MousePositionResponse
 func (a *ComputerUseAPIService) GetMousePositionExecute(r ComputerUseAPIGetMousePositionRequest) (*MousePositionResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *MousePositionResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *MousePositionResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.GetMousePosition")
@@ -962,8 +1292,8 @@ func (a *ComputerUseAPIService) GetMousePositionExecute(r ComputerUseAPIGetMouse
 }
 
 type ComputerUseAPIGetProcessErrorsRequest struct {
-	ctx         context.Context
-	ApiService  ComputerUseAPI
+	ctx context.Context
+	ApiService ComputerUseAPI
 	processName string
 }
 
@@ -976,27 +1306,26 @@ GetProcessErrors Get process errors
 
 Get errors for a specific computer use process
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@param processName Process name to get errors for
-	@return ComputerUseAPIGetProcessErrorsRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param processName Process name to get errors for
+ @return ComputerUseAPIGetProcessErrorsRequest
 */
 func (a *ComputerUseAPIService) GetProcessErrors(ctx context.Context, processName string) ComputerUseAPIGetProcessErrorsRequest {
 	return ComputerUseAPIGetProcessErrorsRequest{
-		ApiService:  a,
-		ctx:         ctx,
+		ApiService: a,
+		ctx: ctx,
 		processName: processName,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ProcessErrorsResponse
+//  @return ProcessErrorsResponse
 func (a *ComputerUseAPIService) GetProcessErrorsExecute(r ComputerUseAPIGetProcessErrorsRequest) (*ProcessErrorsResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ProcessErrorsResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ProcessErrorsResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.GetProcessErrors")
@@ -1066,8 +1395,8 @@ func (a *ComputerUseAPIService) GetProcessErrorsExecute(r ComputerUseAPIGetProce
 }
 
 type ComputerUseAPIGetProcessLogsRequest struct {
-	ctx         context.Context
-	ApiService  ComputerUseAPI
+	ctx context.Context
+	ApiService ComputerUseAPI
 	processName string
 }
 
@@ -1080,27 +1409,26 @@ GetProcessLogs Get process logs
 
 Get logs for a specific computer use process
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@param processName Process name to get logs for
-	@return ComputerUseAPIGetProcessLogsRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param processName Process name to get logs for
+ @return ComputerUseAPIGetProcessLogsRequest
 */
 func (a *ComputerUseAPIService) GetProcessLogs(ctx context.Context, processName string) ComputerUseAPIGetProcessLogsRequest {
 	return ComputerUseAPIGetProcessLogsRequest{
-		ApiService:  a,
-		ctx:         ctx,
+		ApiService: a,
+		ctx: ctx,
 		processName: processName,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ProcessLogsResponse
+//  @return ProcessLogsResponse
 func (a *ComputerUseAPIService) GetProcessLogsExecute(r ComputerUseAPIGetProcessLogsRequest) (*ProcessLogsResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ProcessLogsResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ProcessLogsResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.GetProcessLogs")
@@ -1170,8 +1498,8 @@ func (a *ComputerUseAPIService) GetProcessLogsExecute(r ComputerUseAPIGetProcess
 }
 
 type ComputerUseAPIGetProcessStatusRequest struct {
-	ctx         context.Context
-	ApiService  ComputerUseAPI
+	ctx context.Context
+	ApiService ComputerUseAPI
 	processName string
 }
 
@@ -1184,27 +1512,26 @@ GetProcessStatus Get specific process status
 
 Check if a specific computer use process is running
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@param processName Process name to check
-	@return ComputerUseAPIGetProcessStatusRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param processName Process name to check
+ @return ComputerUseAPIGetProcessStatusRequest
 */
 func (a *ComputerUseAPIService) GetProcessStatus(ctx context.Context, processName string) ComputerUseAPIGetProcessStatusRequest {
 	return ComputerUseAPIGetProcessStatusRequest{
-		ApiService:  a,
-		ctx:         ctx,
+		ApiService: a,
+		ctx: ctx,
 		processName: processName,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ProcessStatusResponse
+//  @return ProcessStatusResponse
 func (a *ComputerUseAPIService) GetProcessStatusExecute(r ComputerUseAPIGetProcessStatusRequest) (*ProcessStatusResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ProcessStatusResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ProcessStatusResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.GetProcessStatus")
@@ -1273,8 +1600,132 @@ func (a *ComputerUseAPIService) GetProcessStatusExecute(r ComputerUseAPIGetProce
 	return localVarReturnValue, localVarHTTPResponse, nil
 }
 
+type ComputerUseAPIGetRecordingRequest struct {
+	ctx context.Context
+	ApiService ComputerUseAPI
+	id string
+}
+
+func (r ComputerUseAPIGetRecordingRequest) Execute() (*Recording, *http.Response, error) {
+	return r.ApiService.GetRecordingExecute(r)
+}
+
+/*
+GetRecording Get recording details
+
+Get details of a specific recording by ID
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param id Recording ID
+ @return ComputerUseAPIGetRecordingRequest
+*/
+func (a *ComputerUseAPIService) GetRecording(ctx context.Context, id string) ComputerUseAPIGetRecordingRequest {
+	return ComputerUseAPIGetRecordingRequest{
+		ApiService: a,
+		ctx: ctx,
+		id: id,
+	}
+}
+
+// Execute executes the request
+//  @return Recording
+func (a *ComputerUseAPIService) GetRecordingExecute(r ComputerUseAPIGetRecordingRequest) (*Recording, *http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *Recording
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.GetRecording")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/computeruse/recordings/{id}"
+	localVarPath = strings.Replace(localVarPath, "{"+"id"+"}", url.PathEscape(parameterValueToString(r.id, "id")), -1)
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		if localVarHTTPResponse.StatusCode == 404 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 500 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
 type ComputerUseAPIGetWindowsRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
 }
 
@@ -1287,25 +1738,24 @@ GetWindows Get windows information
 
 Get information about all open windows
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIGetWindowsRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIGetWindowsRequest
 */
 func (a *ComputerUseAPIService) GetWindows(ctx context.Context) ComputerUseAPIGetWindowsRequest {
 	return ComputerUseAPIGetWindowsRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return WindowsResponse
+//  @return WindowsResponse
 func (a *ComputerUseAPIService) GetWindowsExecute(r ComputerUseAPIGetWindowsRequest) (*WindowsResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *WindowsResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *WindowsResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.GetWindows")
@@ -1373,10 +1823,119 @@ func (a *ComputerUseAPIService) GetWindowsExecute(r ComputerUseAPIGetWindowsRequ
 	return localVarReturnValue, localVarHTTPResponse, nil
 }
 
-type ComputerUseAPIMoveMouseRequest struct {
-	ctx        context.Context
+type ComputerUseAPIListRecordingsRequest struct {
+	ctx context.Context
 	ApiService ComputerUseAPI
-	request    *MouseMoveRequest
+}
+
+func (r ComputerUseAPIListRecordingsRequest) Execute() (*ListRecordingsResponse, *http.Response, error) {
+	return r.ApiService.ListRecordingsExecute(r)
+}
+
+/*
+ListRecordings List all recordings
+
+Get a list of all recordings (active and completed)
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIListRecordingsRequest
+*/
+func (a *ComputerUseAPIService) ListRecordings(ctx context.Context) ComputerUseAPIListRecordingsRequest {
+	return ComputerUseAPIListRecordingsRequest{
+		ApiService: a,
+		ctx: ctx,
+	}
+}
+
+// Execute executes the request
+//  @return ListRecordingsResponse
+func (a *ComputerUseAPIService) ListRecordingsExecute(r ComputerUseAPIListRecordingsRequest) (*ListRecordingsResponse, *http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ListRecordingsResponse
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.ListRecordings")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/computeruse/recordings"
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		if localVarHTTPResponse.StatusCode == 500 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
+type ComputerUseAPIMoveMouseRequest struct {
+	ctx context.Context
+	ApiService ComputerUseAPI
+	request *MouseMoveRequest
 }
 
 // Mouse move request
@@ -1394,25 +1953,24 @@ MoveMouse Move mouse cursor
 
 Move the mouse cursor to the specified coordinates
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIMoveMouseRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIMoveMouseRequest
 */
 func (a *ComputerUseAPIService) MoveMouse(ctx context.Context) ComputerUseAPIMoveMouseRequest {
 	return ComputerUseAPIMoveMouseRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return MousePositionResponse
+//  @return MousePositionResponse
 func (a *ComputerUseAPIService) MoveMouseExecute(r ComputerUseAPIMoveMouseRequest) (*MousePositionResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodPost
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *MousePositionResponse
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *MousePositionResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.MoveMouse")
@@ -1486,9 +2044,9 @@ func (a *ComputerUseAPIService) MoveMouseExecute(r ComputerUseAPIMoveMouseReques
 }
 
 type ComputerUseAPIPressHotkeyRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
-	request    *KeyboardHotkeyRequest
+	request *KeyboardHotkeyRequest
 }
 
 // Hotkey press request
@@ -1506,25 +2064,24 @@ PressHotkey Press hotkey
 
 Press a hotkey combination (e.g., ctrl+c, cmd+v)
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIPressHotkeyRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIPressHotkeyRequest
 */
 func (a *ComputerUseAPIService) PressHotkey(ctx context.Context) ComputerUseAPIPressHotkeyRequest {
 	return ComputerUseAPIPressHotkeyRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return map[string]interface{}
+//  @return map[string]interface{}
 func (a *ComputerUseAPIService) PressHotkeyExecute(r ComputerUseAPIPressHotkeyRequest) (map[string]interface{}, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodPost
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue map[string]interface{}
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  map[string]interface{}
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.PressHotkey")
@@ -1598,9 +2155,9 @@ func (a *ComputerUseAPIService) PressHotkeyExecute(r ComputerUseAPIPressHotkeyRe
 }
 
 type ComputerUseAPIPressKeyRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
-	request    *KeyboardPressRequest
+	request *KeyboardPressRequest
 }
 
 // Key press request
@@ -1618,25 +2175,24 @@ PressKey Press key
 
 Press a key with optional modifiers
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIPressKeyRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIPressKeyRequest
 */
 func (a *ComputerUseAPIService) PressKey(ctx context.Context) ComputerUseAPIPressKeyRequest {
 	return ComputerUseAPIPressKeyRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return map[string]interface{}
+//  @return map[string]interface{}
 func (a *ComputerUseAPIService) PressKeyExecute(r ComputerUseAPIPressKeyRequest) (map[string]interface{}, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodPost
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue map[string]interface{}
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  map[string]interface{}
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.PressKey")
@@ -1710,8 +2266,8 @@ func (a *ComputerUseAPIService) PressKeyExecute(r ComputerUseAPIPressKeyRequest)
 }
 
 type ComputerUseAPIRestartProcessRequest struct {
-	ctx         context.Context
-	ApiService  ComputerUseAPI
+	ctx context.Context
+	ApiService ComputerUseAPI
 	processName string
 }
 
@@ -1724,27 +2280,26 @@ RestartProcess Restart specific process
 
 Restart a specific computer use process
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@param processName Process name to restart
-	@return ComputerUseAPIRestartProcessRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param processName Process name to restart
+ @return ComputerUseAPIRestartProcessRequest
 */
 func (a *ComputerUseAPIService) RestartProcess(ctx context.Context, processName string) ComputerUseAPIRestartProcessRequest {
 	return ComputerUseAPIRestartProcessRequest{
-		ApiService:  a,
-		ctx:         ctx,
+		ApiService: a,
+		ctx: ctx,
 		processName: processName,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ProcessRestartResponse
+//  @return ProcessRestartResponse
 func (a *ComputerUseAPIService) RestartProcessExecute(r ComputerUseAPIRestartProcessRequest) (*ProcessRestartResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodPost
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ProcessRestartResponse
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ProcessRestartResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.RestartProcess")
@@ -1814,9 +2369,9 @@ func (a *ComputerUseAPIService) RestartProcessExecute(r ComputerUseAPIRestartPro
 }
 
 type ComputerUseAPIScrollRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
-	request    *MouseScrollRequest
+	request *MouseScrollRequest
 }
 
 // Mouse scroll request
@@ -1834,25 +2389,24 @@ Scroll Scroll mouse wheel
 
 Scroll the mouse wheel at the specified coordinates
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIScrollRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIScrollRequest
 */
 func (a *ComputerUseAPIService) Scroll(ctx context.Context) ComputerUseAPIScrollRequest {
 	return ComputerUseAPIScrollRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ScrollResponse
+//  @return ScrollResponse
 func (a *ComputerUseAPIService) ScrollExecute(r ComputerUseAPIScrollRequest) (*ScrollResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodPost
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ScrollResponse
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ScrollResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.Scroll")
@@ -1926,7 +2480,7 @@ func (a *ComputerUseAPIService) ScrollExecute(r ComputerUseAPIScrollRequest) (*S
 }
 
 type ComputerUseAPIStartComputerUseRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
 }
 
@@ -1939,25 +2493,24 @@ StartComputerUse Start computer use processes
 
 Start all computer use processes and return their status
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIStartComputerUseRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIStartComputerUseRequest
 */
 func (a *ComputerUseAPIService) StartComputerUse(ctx context.Context) ComputerUseAPIStartComputerUseRequest {
 	return ComputerUseAPIStartComputerUseRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ComputerUseStartResponse
+//  @return ComputerUseStartResponse
 func (a *ComputerUseAPIService) StartComputerUseExecute(r ComputerUseAPIStartComputerUseRequest) (*ComputerUseStartResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodPost
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ComputerUseStartResponse
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ComputerUseStartResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.StartComputerUse")
@@ -2025,8 +2578,137 @@ func (a *ComputerUseAPIService) StartComputerUseExecute(r ComputerUseAPIStartCom
 	return localVarReturnValue, localVarHTTPResponse, nil
 }
 
+type ComputerUseAPIStartRecordingRequest struct {
+	ctx context.Context
+	ApiService ComputerUseAPI
+	request *StartRecordingRequest
+}
+
+// Recording options
+func (r ComputerUseAPIStartRecordingRequest) Request(request StartRecordingRequest) ComputerUseAPIStartRecordingRequest {
+	r.request = &request
+	return r
+}
+
+func (r ComputerUseAPIStartRecordingRequest) Execute() (*Recording, *http.Response, error) {
+	return r.ApiService.StartRecordingExecute(r)
+}
+
+/*
+StartRecording Start a new recording
+
+Start a new screen recording session
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIStartRecordingRequest
+*/
+func (a *ComputerUseAPIService) StartRecording(ctx context.Context) ComputerUseAPIStartRecordingRequest {
+	return ComputerUseAPIStartRecordingRequest{
+		ApiService: a,
+		ctx: ctx,
+	}
+}
+
+// Execute executes the request
+//  @return Recording
+func (a *ComputerUseAPIService) StartRecordingExecute(r ComputerUseAPIStartRecordingRequest) (*Recording, *http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *Recording
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.StartRecording")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/computeruse/recordings/start"
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{"application/json"}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	// body params
+	localVarPostBody = r.request
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		if localVarHTTPResponse.StatusCode == 400 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 500 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
 type ComputerUseAPIStopComputerUseRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
 }
 
@@ -2039,25 +2721,24 @@ StopComputerUse Stop computer use processes
 
 Stop all computer use processes and return their status
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPIStopComputerUseRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIStopComputerUseRequest
 */
 func (a *ComputerUseAPIService) StopComputerUse(ctx context.Context) ComputerUseAPIStopComputerUseRequest {
 	return ComputerUseAPIStopComputerUseRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ComputerUseStopResponse
+//  @return ComputerUseStopResponse
 func (a *ComputerUseAPIService) StopComputerUseExecute(r ComputerUseAPIStopComputerUseRequest) (*ComputerUseStopResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodPost
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ComputerUseStopResponse
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ComputerUseStopResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.StopComputerUse")
@@ -2125,17 +2806,149 @@ func (a *ComputerUseAPIService) StopComputerUseExecute(r ComputerUseAPIStopCompu
 	return localVarReturnValue, localVarHTTPResponse, nil
 }
 
-type ComputerUseAPITakeCompressedRegionScreenshotRequest struct {
-	ctx        context.Context
+type ComputerUseAPIStopRecordingRequest struct {
+	ctx context.Context
 	ApiService ComputerUseAPI
-	x          *int32
-	y          *int32
-	width      *int32
-	height     *int32
+	request *StopRecordingRequest
+}
+
+// Recording ID to stop
+func (r ComputerUseAPIStopRecordingRequest) Request(request StopRecordingRequest) ComputerUseAPIStopRecordingRequest {
+	r.request = &request
+	return r
+}
+
+func (r ComputerUseAPIStopRecordingRequest) Execute() (*Recording, *http.Response, error) {
+	return r.ApiService.StopRecordingExecute(r)
+}
+
+/*
+StopRecording Stop a recording
+
+Stop an active screen recording session
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPIStopRecordingRequest
+*/
+func (a *ComputerUseAPIService) StopRecording(ctx context.Context) ComputerUseAPIStopRecordingRequest {
+	return ComputerUseAPIStopRecordingRequest{
+		ApiService: a,
+		ctx: ctx,
+	}
+}
+
+// Execute executes the request
+//  @return Recording
+func (a *ComputerUseAPIService) StopRecordingExecute(r ComputerUseAPIStopRecordingRequest) (*Recording, *http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *Recording
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.StopRecording")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/computeruse/recordings/stop"
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+	if r.request == nil {
+		return localVarReturnValue, nil, reportError("request is required and must be specified")
+	}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{"application/json"}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	// body params
+	localVarPostBody = r.request
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		if localVarHTTPResponse.StatusCode == 400 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 404 {
+			var v map[string]string
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
+type ComputerUseAPITakeCompressedRegionScreenshotRequest struct {
+	ctx context.Context
+	ApiService ComputerUseAPI
+	x *int32
+	y *int32
+	width *int32
+	height *int32
 	showCursor *bool
-	format     *string
-	quality    *int32
-	scale      *float32
+	format *string
+	quality *int32
+	scale *float32
 }
 
 // X coordinate of the region
@@ -2195,25 +3008,24 @@ TakeCompressedRegionScreenshot Take a compressed region screenshot
 
 Take a compressed screenshot of a specific region of the screen
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPITakeCompressedRegionScreenshotRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPITakeCompressedRegionScreenshotRequest
 */
 func (a *ComputerUseAPIService) TakeCompressedRegionScreenshot(ctx context.Context) ComputerUseAPITakeCompressedRegionScreenshotRequest {
 	return ComputerUseAPITakeCompressedRegionScreenshotRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ScreenshotResponse
+//  @return ScreenshotResponse
 func (a *ComputerUseAPIService) TakeCompressedRegionScreenshotExecute(r ComputerUseAPITakeCompressedRegionScreenshotRequest) (*ScreenshotResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ScreenshotResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ScreenshotResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.TakeCompressedRegionScreenshot")
@@ -2310,12 +3122,12 @@ func (a *ComputerUseAPIService) TakeCompressedRegionScreenshotExecute(r Computer
 }
 
 type ComputerUseAPITakeCompressedScreenshotRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
 	showCursor *bool
-	format     *string
-	quality    *int32
-	scale      *float32
+	format *string
+	quality *int32
+	scale *float32
 }
 
 // Whether to show cursor in screenshot
@@ -2351,25 +3163,24 @@ TakeCompressedScreenshot Take a compressed screenshot
 
 Take a compressed screenshot of the entire screen
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPITakeCompressedScreenshotRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPITakeCompressedScreenshotRequest
 */
 func (a *ComputerUseAPIService) TakeCompressedScreenshot(ctx context.Context) ComputerUseAPITakeCompressedScreenshotRequest {
 	return ComputerUseAPITakeCompressedScreenshotRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ScreenshotResponse
+//  @return ScreenshotResponse
 func (a *ComputerUseAPIService) TakeCompressedScreenshotExecute(r ComputerUseAPITakeCompressedScreenshotRequest) (*ScreenshotResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ScreenshotResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ScreenshotResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.TakeCompressedScreenshot")
@@ -2450,12 +3261,12 @@ func (a *ComputerUseAPIService) TakeCompressedScreenshotExecute(r ComputerUseAPI
 }
 
 type ComputerUseAPITakeRegionScreenshotRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
-	x          *int32
-	y          *int32
-	width      *int32
-	height     *int32
+	x *int32
+	y *int32
+	width *int32
+	height *int32
 	showCursor *bool
 }
 
@@ -2498,25 +3309,24 @@ TakeRegionScreenshot Take a region screenshot
 
 Take a screenshot of a specific region of the screen
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPITakeRegionScreenshotRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPITakeRegionScreenshotRequest
 */
 func (a *ComputerUseAPIService) TakeRegionScreenshot(ctx context.Context) ComputerUseAPITakeRegionScreenshotRequest {
 	return ComputerUseAPITakeRegionScreenshotRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ScreenshotResponse
+//  @return ScreenshotResponse
 func (a *ComputerUseAPIService) TakeRegionScreenshotExecute(r ComputerUseAPITakeRegionScreenshotRequest) (*ScreenshotResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ScreenshotResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ScreenshotResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.TakeRegionScreenshot")
@@ -2604,7 +3414,7 @@ func (a *ComputerUseAPIService) TakeRegionScreenshotExecute(r ComputerUseAPITake
 }
 
 type ComputerUseAPITakeScreenshotRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
 	showCursor *bool
 }
@@ -2624,25 +3434,24 @@ TakeScreenshot Take a screenshot
 
 Take a screenshot of the entire screen
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPITakeScreenshotRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPITakeScreenshotRequest
 */
 func (a *ComputerUseAPIService) TakeScreenshot(ctx context.Context) ComputerUseAPITakeScreenshotRequest {
 	return ComputerUseAPITakeScreenshotRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ScreenshotResponse
+//  @return ScreenshotResponse
 func (a *ComputerUseAPIService) TakeScreenshotExecute(r ComputerUseAPITakeScreenshotRequest) (*ScreenshotResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ScreenshotResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ScreenshotResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.TakeScreenshot")
@@ -2714,9 +3523,9 @@ func (a *ComputerUseAPIService) TakeScreenshotExecute(r ComputerUseAPITakeScreen
 }
 
 type ComputerUseAPITypeTextRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService ComputerUseAPI
-	request    *KeyboardTypeRequest
+	request *KeyboardTypeRequest
 }
 
 // Text typing request
@@ -2734,25 +3543,24 @@ TypeText Type text
 
 Type text with optional delay between keystrokes
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ComputerUseAPITypeTextRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ComputerUseAPITypeTextRequest
 */
 func (a *ComputerUseAPIService) TypeText(ctx context.Context) ComputerUseAPITypeTextRequest {
 	return ComputerUseAPITypeTextRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return map[string]interface{}
+//  @return map[string]interface{}
 func (a *ComputerUseAPIService) TypeTextExecute(r ComputerUseAPITypeTextRequest) (map[string]interface{}, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodPost
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue map[string]interface{}
+		localVarHTTPMethod   = http.MethodPost
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  map[string]interface{}
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ComputerUseAPIService.TypeText")

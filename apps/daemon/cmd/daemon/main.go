@@ -5,104 +5,151 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
+	"log/slog"
 	"os"
-	"os/exec"
 	"os/signal"
-	"sync"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	golog "log"
 
+	"github.com/daytonaio/common-go/pkg/log"
 	"github.com/daytonaio/daemon/cmd/daemon/config"
 	"github.com/daytonaio/daemon/internal/util"
+	"github.com/daytonaio/daemon/pkg/recording"
+	"github.com/daytonaio/daemon/pkg/recordingdashboard"
+	"github.com/daytonaio/daemon/pkg/session"
 	"github.com/daytonaio/daemon/pkg/ssh"
 	"github.com/daytonaio/daemon/pkg/terminal"
 	"github.com/daytonaio/daemon/pkg/toolbox"
-	log "github.com/sirupsen/logrus"
+	"github.com/lmittmann/tint"
+	"github.com/mattn/go-isatty"
 )
 
 func main() {
-	c, err := config.GetConfig()
+	os.Exit(run())
+}
+
+func run() int {
+	logLevel := log.ParseLogLevel(os.Getenv("LOG_LEVEL"))
+
+	// Create the console handler with tint for colored output
+	consoleHandler := tint.NewHandler(os.Stdout, &tint.Options{
+		NoColor:    !isatty.IsTerminal(os.Stdout.Fd()),
+		TimeFormat: time.RFC3339,
+		Level:      logLevel,
+	})
+
+	logger := slog.New(consoleHandler)
+	slog.SetDefault(logger)
+
+	// Redirect standard library log to slog
+	golog.SetOutput(&log.DebugLogWriter{})
+
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		panic(err)
+		logger.Error("Failed to get user home directory", "error", err)
+		return 2
 	}
+
+	configDir := filepath.Join(homeDir, ".daytona")
+	err = os.MkdirAll(configDir, 0755)
+	if err != nil {
+		logger.Error("Failed to create config directory", "path", configDir, "error", err)
+		return 2
+	}
+
+	entrypointLogFilePath := filepath.Join(configDir, "sessions", util.EntrypointSessionID, util.EntrypointCommandID, "output.log")
 
 	// Check if user wants to read entrypoint logs
 	args := os.Args[1:]
 	if len(args) == 2 && args[0] == "entrypoint" && args[1] == "logs" {
-		util.ReadEntrypointLogs(c.EntrypointLogFilePath)
-		return
+		err := util.ReadEntrypointLogs(entrypointLogFilePath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				logger.Warn("Logs not found, please check if correct entrypoint was provided for sandbox.")
+			} else {
+				logger.Error("Failed to read entrypoint log file", "error", err)
+			}
+
+			return 1
+		}
+
+		return 0
+	}
+
+	c, err := config.GetConfig()
+	if err != nil {
+		logger.Error("Failed to get config", "error", err)
+		return 2
+	}
+
+	// If workdir in image is not set, use user home as workdir
+	if c.UserHomeAsWorkDir {
+		err = os.Chdir(homeDir)
+		if err != nil {
+			logger.Warn("Failed to change working directory to home directory", "error", err)
+		}
 	}
 
 	var logWriter io.Writer
 	if c.DaemonLogFilePath != "" {
 		logFile, err := os.OpenFile(c.DaemonLogFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			log.Error("Failed to open log file at ", c.DaemonLogFilePath)
+			logger.Error("Failed to open log file", "path", c.DaemonLogFilePath, "error", err)
 		} else {
 			defer logFile.Close()
 			logWriter = logFile
+
+			fileHandler := slog.NewTextHandler(logWriter, &slog.HandlerOptions{
+				Level: logLevel,
+			})
+			handler := log.NewMultiHandler([]slog.Handler{consoleHandler, fileHandler}...)
+
+			logger = slog.New(handler)
+			slog.SetDefault(logger)
 		}
 	}
 
-	initLogs(logWriter)
+	sessionService := session.NewSessionService(logger, configDir, c.TerminationGracePeriod, c.TerminationCheckInterval)
 
-	// If workdir in image is not set, use user home as workdir
-	if c.UserHomeAsWorkDir {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			log.Warnf("failed to get home directory: %v", err)
-		} else {
-			err = os.Chdir(homeDir)
-			if err != nil {
-				log.Warnf("failed to change working directory to home directory: %v", err)
-			}
-		}
-	}
-
-	// Execute passed arguments as command
-	var entrypointCmd *exec.Cmd
-	var entrypointWg sync.WaitGroup
+	// Execute passed arguments as command in entrypoint session
 	if len(args) > 0 {
-		// used for logging in case of errors starting/waiting for the command
-		entrypointLogWriter := os.Stdout
-		entrypointErrLogWriter := os.Stderr
-
-		if c.EntrypointLogFilePath != "" {
-			entrypointLogFile, err := os.OpenFile(c.EntrypointLogFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err != nil {
-				log.Errorf("Failed to open log file at %s due to %v, fallback to STDOUT and STDERR", c.EntrypointLogFilePath, err)
-			} else {
-				defer entrypointLogFile.Close()
-				entrypointLogWriter = entrypointLogFile
-				entrypointErrLogWriter = entrypointLogFile
-			}
+		// Create entrypoint session
+		err = sessionService.Create(util.EntrypointSessionID, false)
+		if err != nil {
+			logger.Error("Failed to create entrypoint session", "error", err)
+			return 2
 		}
 
-		entrypointCmd = exec.Command(args[0], args[1:]...)
-		entrypointCmd.Env = os.Environ()
-		entrypointCmd.Stdout = entrypointLogWriter
-		entrypointCmd.Stderr = entrypointErrLogWriter
+		// Defer entrypoint session deletion concurrently with toolbox shutdown
+		defer func() {
+			delErr := sessionService.Delete(context.Background(), util.EntrypointSessionID)
+			if delErr != nil {
+				logger.Error("Failed to delete entrypoint session", "error", delErr)
+			} else {
+				logger.Debug("Deleted entrypoint session", "session_id", util.EntrypointSessionID)
+			}
+		}()
 
-		// Start the command and wait for it in a background goroutine.
-		// This ensures the child process is properly reaped (preventing zombies)
-		// while allowing the daemon to continue initialization without blocking.
-		startErr := entrypointCmd.Start()
-		if startErr != nil {
-			fmt.Fprintf(entrypointErrLogWriter, "failed to start command: %v\n", startErr)
-		} else {
-			entrypointWg.Add(1)
-			go func() {
-				defer entrypointWg.Done()
-				if err := entrypointCmd.Wait(); err != nil {
-					fmt.Fprintf(entrypointErrLogWriter, "command exited with error: %v\n", err)
-				} else {
-					fmt.Fprint(entrypointLogWriter, "Entrypoint command completed successfully\n")
-				}
-			}()
+		logger.Debug("Created entrypoint session", "session_id", util.EntrypointSessionID)
+
+		// Execute command asynchronously via session
+		command := util.ShellQuoteJoin(args)
+		_, err := sessionService.Execute(
+			util.EntrypointSessionID,
+			util.EntrypointCommandID,
+			command,
+			true,  // async=true for non-blocking
+			false, // isCombinedOutput=false
+			true,  // suppressInputEcho=true
+		)
+		if err != nil {
+			logger.Error("Failed to execute entrypoint command", "error", err)
+			return 2
 		}
 	}
 
@@ -110,14 +157,28 @@ func main() {
 
 	workDir, err := os.Getwd()
 	if err != nil {
-		panic(fmt.Errorf("failed to get current working directory: %w", err))
+		logger.Error("Failed to get current working directory", "error", err)
+		return 2
 	}
 
-	toolBoxServer := &toolbox.Server{
-		WorkDir:                              workDir,
-		TerminationGracePeriodSeconds:        c.TerminationGracePeriodSeconds,
-		TerminationCheckIntervalMilliseconds: c.TerminationCheckIntervalMilliseconds,
+	recordingsDir := c.RecordingsDir
+	if recordingsDir == "" {
+		recordingsDir = filepath.Join(configDir, "recordings")
 	}
+	recordingService := recording.NewRecordingService(logger, recordingsDir)
+
+	toolBoxServer := toolbox.NewServer(toolbox.ServerConfig{
+		Logger:                logger,
+		WorkDir:               workDir,
+		ConfigDir:             configDir,
+		OtelEndpoint:          c.OtelEndpoint,
+		SandboxId:             c.SandboxId,
+		SessionService:        sessionService,
+		RecordingService:      recordingService,
+		OrganizationId:        c.OrganizationId,
+		RegionId:              c.RegionId,
+		EntrypointLogFilePath: entrypointLogFilePath,
+	})
 
 	// Start the toolbox server in a go routine
 	go func() {
@@ -134,10 +195,15 @@ func main() {
 		}
 	}()
 
-	sshServer := &ssh.Server{
-		WorkDir:        workDir,
-		DefaultWorkDir: workDir,
-	}
+	// Start recording dashboard server
+	go func() {
+		if err := recordingdashboard.NewDashboardServer(logger, recordingService).Start(); err != nil {
+			errChan <- err
+		}
+	}()
+
+	sshServer := ssh.NewServer(logger, workDir, workDir)
+
 	go func() {
 		if err := sshServer.Start(); err != nil {
 			errChan <- err
@@ -151,94 +217,14 @@ func main() {
 	// Wait for either an error or shutdown signal
 	select {
 	case err := <-errChan:
-		log.Errorf("Error: %v", err)
+		logger.Error("Error occurred", "error", err)
 	case sig := <-sigChan:
-		log.Infof("Received signal %v, shutting down gracefully...", sig)
+		logger.Info("Received signal, shutting down gracefully...", "signal", sig)
 	}
 
-	// Graceful shutdown
-	log.Info("Stopping computer use processes...")
-	if toolBoxServer.ComputerUse != nil {
-		_, err := toolBoxServer.ComputerUse.Stop()
-		if err != nil {
-			log.Errorf("Failed to stop computer use: %v", err)
-		}
-	}
+	// Toolbox server graceful shutdown
+	toolBoxServer.Shutdown()
 
-	// Handle entrypoint command shutdown
-	if entrypointCmd != nil && entrypointCmd.Process != nil {
-		log.Info("Waiting for entrypoint command to complete...")
-
-		// Create a channel to signal when WaitGroup is done
-		done := make(chan struct{})
-		go func() {
-			entrypointWg.Wait()
-			close(done)
-		}()
-
-		// Wait with timeout for graceful completion
-		timer := time.NewTimer(time.Duration(c.EntrypointShutdownTimeoutSec) * time.Second)
-		select {
-		case <-done:
-			log.Info("Entrypoint command completed")
-			if !timer.Stop() {
-				<-timer.C
-			}
-		case <-timer.C:
-			log.Warn("Entrypoint command did not complete within timeout, sending SIGTERM...")
-			if err := entrypointCmd.Process.Signal(syscall.SIGTERM); err != nil {
-				log.Errorf("Failed to send SIGTERM to entrypoint command: %v", err)
-			}
-
-			// Wait a bit more for SIGTERM to take effect
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.SigtermShutdownTimeoutSec)*time.Second)
-			defer cancel()
-
-			gracefulDone := make(chan struct{})
-			go func() {
-				entrypointWg.Wait()
-				close(gracefulDone)
-			}()
-
-			select {
-			case <-gracefulDone:
-				log.Info("Entrypoint command terminated gracefully")
-			case <-ctx.Done():
-				log.Warn("Entrypoint command did not respond to SIGTERM, sending SIGKILL...")
-				if err := entrypointCmd.Process.Kill(); err != nil {
-					log.Errorf("Failed to kill entrypoint command: %v", err)
-				}
-				entrypointWg.Wait()
-				log.Info("Entrypoint command killed")
-			}
-		}
-	}
-
-	log.Info("Shutdown complete")
-}
-
-func initLogs(logWriter io.Writer) {
-	logLevel := log.WarnLevel
-
-	logLevelEnv, logLevelSet := os.LookupEnv("LOG_LEVEL")
-
-	if logLevelSet {
-		var err error
-		logLevel, err = log.ParseLevel(logLevelEnv)
-		if err != nil {
-			logLevel = log.WarnLevel
-		}
-	}
-
-	log.SetLevel(logLevel)
-	logFormatter := &config.LogFormatter{
-		TextFormatter: &log.TextFormatter{
-			ForceColors: true,
-		},
-		LogFileWriter: logWriter,
-	}
-
-	log.SetFormatter(logFormatter)
-
-	golog.SetOutput(log.New().WriterLevel(log.DebugLevel))
+	slog.Info("Shutdown complete")
+	return 0
 }

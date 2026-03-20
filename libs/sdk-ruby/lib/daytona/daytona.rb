@@ -4,7 +4,9 @@ require 'json'
 require 'uri'
 
 module Daytona
-  class Daytona # rubocop:disable Metrics/ClassLength
+  class Daytona
+    include Instrumentation
+
     # @return [Daytona::Config]
     attr_reader :config
 
@@ -27,18 +29,29 @@ module Daytona
     attr_reader :snapshot
 
     # @param config [Daytona::Config] Configuration options. Defaults to Daytona::Config.new
-    def initialize(config = Config.new) # rubocop:disable Metrics/AbcSize
+    def initialize(config = Config.new)
       @config = config
       ensure_access_token_defined
+
+      otel_enabled = config._experimental&.dig('otel_enabled') || ENV['DAYTONA_EXPERIMENTAL_OTEL_ENABLED'] == 'true'
+      @otel_state = (::Daytona.init_otel(Sdk::VERSION) if otel_enabled)
+
       @api_client = build_api_client
       @sandbox_api = DaytonaApiClient::SandboxApi.new(api_client)
       @config_api = DaytonaApiClient::ConfigApi.new(api_client)
-      @volume = VolumeService.new(DaytonaApiClient::VolumesApi.new(api_client))
+      @volume = VolumeService.new(DaytonaApiClient::VolumesApi.new(api_client), otel_state:)
       @object_storage_api = DaytonaApiClient::ObjectStorageApi.new(api_client)
       @snapshots_api = DaytonaApiClient::SnapshotsApi.new(api_client)
-      @snapshot = SnapshotService.new(snapshots_api:, object_storage_api:, default_region_id: config.target)
-      @proxy_toolbox_url_cache = {}
-      @proxy_toolbox_url_mutex = Mutex.new
+      @snapshot = SnapshotService.new(snapshots_api:, object_storage_api:, default_region_id: config.target,
+                                      otel_state:)
+    end
+
+    # Shuts down OTel providers, flushing any pending telemetry data.
+    #
+    # @return [void]
+    def close
+      ::Daytona.shutdown_otel(@otel_state)
+      @otel_state = nil
     end
 
     # Creates a sandbox with the specified parameters
@@ -71,21 +84,6 @@ module Daytona
       to_sandbox(sandbox_dto:, code_toolbox: code_toolbox_from_labels(sandbox_dto.labels))
     end
 
-    # Finds a Sandbox by its ID or labels.
-    #
-    # @param id [String, Nil]
-    # @param labels [Hash<String, String>]
-    # @return [Daytona::Sandbox]
-    # @raise [Daytona::Sdk::Error]
-    def find_one(id: nil, labels: nil)
-      return get(id) if id
-
-      response = list(labels)
-      raise Sdk::Error, "No sandbox found with labels #{labels}" if response.items.empty?
-
-      response.items.first
-    end
-
     # Lists Sandboxes filtered by labels.
     #
     # @param labels [Hash<String, String>]
@@ -93,7 +91,7 @@ module Daytona
     # @param limit [Integer, Nil]
     # @return [Daytona::PaginatedResource]
     # @raise [Daytona::Sdk::Error]
-    def list(labels = {}, page: nil, limit: nil) # rubocop:disable Metrics/MethodLength
+    def list(labels = {}, page: nil, limit: nil)
       raise Sdk::Error, 'page must be positive integer' if page && page < 1
 
       raise Sdk::Error, 'limit must be positive integer' if limit && limit < 1
@@ -105,8 +103,10 @@ module Daytona
         page: response.page,
         total_pages: response.total_pages,
         items: response
-          .items
-          .map { |sandbox_dto| to_sandbox(sandbox_dto:, code_toolbox: code_toolbox_from_labels(sandbox_dto.labels)) }
+               .items
+               .map do |sandbox_dto|
+                 to_sandbox(sandbox_dto:, code_toolbox: code_toolbox_from_labels(sandbox_dto.labels))
+        end
       )
     end
 
@@ -124,7 +124,12 @@ module Daytona
     # @return [void]
     def stop(sandbox, timeout = Sandbox::DEFAULT_TIMEOUT) = sandbox.stop(timeout)
 
+    instrument :create, :delete, :get, :list, :start, :stop, component: 'Daytona'
+
     private
+
+    # @return [Daytona::OtelState, nil]
+    attr_reader :otel_state
 
     # Creates a sandbox with the specified parameters
     #
@@ -133,7 +138,7 @@ module Daytona
     # @param on_snapshot_create_logs [Proc]
     # @return [Daytona::Sandbox] The created sandbox
     # @raise [Daytona::Sdk::Error] If auto_stop_interval or auto_archive_interval is negative
-    def _create(params, timeout: 60, on_snapshot_create_logs: nil) # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+    def _create(params, timeout: 60, on_snapshot_create_logs: nil)
       raise Sdk::Error, 'Timeout must be a non-negative number' if timeout.negative?
 
       start_time = Time.now
@@ -228,7 +233,7 @@ module Daytona
       DaytonaApiClient::Configuration.new.configure do |api_config|
         uri = URI(config.api_url)
         api_config.scheme = uri.scheme
-        api_config.host = uri.host
+        api_config.host = uri.authority # Includes hostname:port
         api_config.base_path = uri.path
 
         api_config.access_token_getter = proc { config.api_key || config.jwt_token }
@@ -245,27 +250,8 @@ module Daytona
         config:,
         sandbox_api:,
         code_toolbox:,
-        get_proxy_toolbox_url: proc { |sandbox_id, region_id| proxy_toolbox_url(sandbox_id, region_id) }
+        otel_state: @otel_state
       )
-    end
-
-    # Gets the proxy toolbox URL from the sandbox API (cached per region)
-    #
-    # @param sandbox_id [String] The sandbox ID
-    # @param region_id [String] The region ID
-    # @return [String] The proxy toolbox URL
-    def proxy_toolbox_url(sandbox_id, region_id)
-      # Return cached URL if available
-      return @proxy_toolbox_url_cache[region_id] if @proxy_toolbox_url_cache.key?(region_id)
-
-      # Use mutex to ensure thread-safe caching
-      @proxy_toolbox_url_mutex.synchronize do
-        # Double-check after acquiring lock
-        return @proxy_toolbox_url_cache[region_id] if @proxy_toolbox_url_cache.key?(region_id)
-
-        # Fetch and cache the URL
-        @proxy_toolbox_url_cache[region_id] = sandbox_api.get_toolbox_proxy_url(sandbox_id).url
-      end
     end
 
     # Converts a language to a code toolbox

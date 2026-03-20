@@ -5,22 +5,20 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"time"
 
 	"github.com/daytonaio/common-go/pkg/timer"
+	"github.com/daytonaio/runner/pkg/api/dto"
 	"github.com/daytonaio/runner/pkg/common"
-	"github.com/daytonaio/runner/pkg/models/enums"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/strslice"
-
-	log "github.com/sirupsen/logrus"
 )
 
-func (d *DockerClient) Start(ctx context.Context, containerId string, metadata map[string]string) (string, error) {
+func (d *DockerClient) Start(ctx context.Context, containerId string, authToken *string, metadata map[string]string) (*container.InspectResponse, string, error) {
 	defer timer.Timer()()
-	d.statesCache.SetSandboxState(ctx, containerId, enums.SandboxStateStarting)
 
 	// Cancel a backup if it's already in progress
 	backup_context, ok := backup_context_map.Get(containerId)
@@ -30,50 +28,55 @@ func (d *DockerClient) Start(ctx context.Context, containerId string, metadata m
 
 	c, err := d.ContainerInspect(ctx, containerId)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
 	if c.State.Running {
 		containerIP := common.GetContainerIpAddress(ctx, c)
 		if containerIP == "" {
-			return "", errors.New("sandbox IP not found? Is the sandbox started?")
+			return nil, "", errors.New("sandbox IP not found? Is the sandbox started?")
 		}
 
-		daemonVersion, err := d.waitForDaemonRunning(ctx, containerIP)
+		daemonVersion, err := d.waitForDaemonRunning(ctx, containerIP, authToken)
 		if err != nil {
-			return "", err
+			return nil, "", err
 		}
 
-		d.statesCache.SetSandboxState(ctx, containerId, enums.SandboxStateStarted)
-		return daemonVersion, nil
+		return c, daemonVersion, nil
+	}
+
+	// Re-establish FUSE mounts that may have died since the container was last running.
+	if volumesJSON, ok := metadata["volumes"]; ok {
+		var volumes []dto.VolumeDTO
+		if err := json.Unmarshal([]byte(volumesJSON), &volumes); err == nil && len(volumes) > 0 {
+			_, err = d.getVolumesMountPathBinds(ctx, volumes)
+			if err != nil {
+				d.logger.ErrorContext(ctx, "Failed to ensure volume FUSE mounts", "error", err)
+			}
+		}
 	}
 
 	err = d.apiClient.ContainerStart(ctx, containerId, container.StartOptions{})
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
 	// make sure container is running
-	err = d.waitForContainerRunning(ctx, containerId)
+	runningContainer, err := d.waitForContainerRunning(ctx, containerId)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
-	c, err = d.ContainerInspect(ctx, containerId)
-	if err != nil {
-		return "", err
-	}
-
-	containerIP := common.GetContainerIpAddress(ctx, c)
+	containerIP := common.GetContainerIpAddress(ctx, runningContainer)
 	if containerIP == "" {
-		return "", errors.New("sandbox IP not found? Is the sandbox started?")
+		return nil, "", errors.New("sandbox IP not found? Is the sandbox started?")
 	}
 
 	if !slices.Equal(c.Config.Entrypoint, strslice.StrSlice{common.DAEMON_PATH}) {
 		processesCtx := context.Background()
 		go func() {
 			if err := d.startDaytonaDaemon(processesCtx, containerId, c.Config.WorkingDir); err != nil {
-				log.Errorf("Failed to start Daytona daemon: %s\n", err.Error())
+				d.logger.ErrorContext(ctx, "Failed to start Daytona daemon", "error", err)
 			}
 		}()
 	}
@@ -81,27 +84,25 @@ func (d *DockerClient) Start(ctx context.Context, containerId string, metadata m
 	// If daemon is the sandbox entrypoint (common.DAEMON_PATH), it is started as part of the sandbox;
 	// Otherwise, the daemon is started separately above.
 	// In either case, we wait for it here.
-	daemonVersion, err := d.waitForDaemonRunning(ctx, containerIP)
+	daemonVersion, err := d.waitForDaemonRunning(ctx, containerIP, authToken)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
-
-	d.statesCache.SetSandboxState(ctx, containerId, enums.SandboxStateStarted)
 
 	if metadata["limitNetworkEgress"] == "true" {
 		go func() {
 			containerShortId := c.ID[:12]
 			err = d.netRulesManager.SetNetworkLimiter(containerShortId, containerIP)
 			if err != nil {
-				log.Errorf("Failed to set network limiter: %v", err)
+				d.logger.ErrorContext(ctx, "Failed to set network limiter", "error", err)
 			}
 		}()
 	}
 
-	return daemonVersion, nil
+	return runningContainer, daemonVersion, nil
 }
 
-func (d *DockerClient) waitForContainerRunning(ctx context.Context, containerId string) error {
+func (d *DockerClient) waitForContainerRunning(ctx context.Context, containerId string) (*container.InspectResponse, error) {
 	defer timer.Timer()()
 
 	timeout := time.Duration(d.sandboxStartTimeoutSec) * time.Second
@@ -114,15 +115,15 @@ func (d *DockerClient) waitForContainerRunning(ctx context.Context, containerId 
 	for {
 		select {
 		case <-timeoutCtx.Done():
-			return errors.New("timeout waiting for the sandbox to start - please ensure that your entrypoint is long-running")
+			return nil, errors.New("timeout waiting for the sandbox to start - please ensure that your entrypoint is long-running")
 		case <-ticker.C:
-			c, err := d.ContainerInspect(ctx, containerId)
+			c, err := d.ContainerInspect(timeoutCtx, containerId)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			if c.State.Running {
-				return nil
+				return c, nil
 			}
 		}
 	}

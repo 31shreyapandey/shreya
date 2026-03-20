@@ -5,15 +5,22 @@
 
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Tabs, TabsContent } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatDuration, formatTimestamp, getRelativeTimeString } from '@/lib/utils'
 import { Sandbox, SandboxState } from '@daytonaio/api-client'
 import { Archive, Play, Tag, Trash, Wrench, X } from 'lucide-react'
 import React, { useState } from 'react'
+import { Link, generatePath } from 'react-router-dom'
+import { RoutePath } from '@/enums/RoutePath'
 import { CopyButton } from './CopyButton'
 import { ResourceChip } from './ResourceChip'
 import { SandboxState as SandboxStateComponent } from './SandboxTable/SandboxState'
 import { TimestampTooltip } from './TimestampTooltip'
+import { LogsTab, TracesTab, MetricsTab } from './telemetry'
+import { SandboxSpendingTab } from './spending'
+import { useFeatureFlagEnabled } from 'posthog-js/react'
+import { FeatureFlags } from '@/enums/FeatureFlags'
+import { useConfig } from '@/hooks/useConfig'
 
 interface SandboxDetailsSheetProps {
   sandbox: Sandbox | null
@@ -47,6 +54,10 @@ const SandboxDetailsSheet: React.FC<SandboxDetailsSheetProps> = ({
   handleRecover,
 }) => {
   const [terminalUrl, setTerminalUrl] = useState<string | null>(null)
+  const experimentsEnabled = useFeatureFlagEnabled(FeatureFlags.ORGANIZATION_EXPERIMENTS)
+  const spendingEnabled = useFeatureFlagEnabled(FeatureFlags.SANDBOX_SPENDING)
+  const config = useConfig()
+  const spendingTabAvailable = spendingEnabled && !!config.analyticsApiUrl
 
   // TODO: uncomment when we enable the terminal tab
   // useEffect(() => {
@@ -75,6 +86,9 @@ const SandboxDetailsSheet: React.FC<SandboxDetailsSheetProps> = ({
         <SheetHeader className="space-y-0 flex flex-row justify-between items-center  p-4 px-5 border-b border-border">
           <SheetTitle className="text-2xl font-medium">Sandbox Details</SheetTitle>
           <div className="flex gap-2 items-center">
+            <Button variant="link" asChild>
+              <Link to={generatePath(RoutePath.SANDBOX_DETAILS, { sandboxId: sandbox.id })}>View</Link>
+            </Button>
             {writePermitted && (
               <>
                 {sandbox.state === SandboxState.STARTED && (
@@ -161,11 +175,43 @@ const SandboxDetailsSheet: React.FC<SandboxDetailsSheetProps> = ({
         </SheetHeader>
 
         <Tabs defaultValue="overview" className="flex-1 flex flex-col min-h-0">
-          {/* TODO: Add terminal tab */}
-          {/* <TabsList className="px-4 w-full flex-shrink-0">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="terminal">Terminal</TabsTrigger>
-          </TabsList> */}
+          {experimentsEnabled && (
+            <TabsList className="mx-4 w-fit flex-shrink-0 bg-transparent border-b border-border rounded-none h-auto p-0 gap-0 mt-2">
+              <TabsTrigger
+                value="overview"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2"
+              >
+                Overview
+              </TabsTrigger>
+              <TabsTrigger
+                value="logs"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2"
+              >
+                Logs
+              </TabsTrigger>
+              <TabsTrigger
+                value="traces"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2"
+              >
+                Traces
+              </TabsTrigger>
+              <TabsTrigger
+                value="metrics"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2"
+              >
+                Metrics
+              </TabsTrigger>
+              {spendingTabAvailable && (
+                <TabsTrigger
+                  value="spending"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2"
+                >
+                  Spending
+                </TabsTrigger>
+              )}
+            </TabsList>
+          )}
+
           <TabsContent value="overview" className="flex-1 p-6 space-y-10 overflow-y-auto min-h-0">
             <div className="grid grid-cols-2 gap-6">
               <div>
@@ -289,6 +335,24 @@ const SandboxDetailsSheet: React.FC<SandboxDetailsSheetProps> = ({
           <TabsContent value="terminal" className="p-4">
             <iframe title="Terminal" src={terminalUrl || undefined} className="w-full h-full"></iframe>
           </TabsContent>
+
+          <TabsContent value="logs" className="flex-1 min-h-0 overflow-hidden">
+            <LogsTab sandboxId={sandbox.id} />
+          </TabsContent>
+
+          <TabsContent value="traces" className="flex-1 min-h-0 overflow-hidden">
+            <TracesTab sandboxId={sandbox.id} />
+          </TabsContent>
+
+          <TabsContent value="metrics" className="flex-1 min-h-0 overflow-hidden">
+            <MetricsTab sandboxId={sandbox.id} />
+          </TabsContent>
+
+          {spendingTabAvailable && (
+            <TabsContent value="spending" className="flex-1 min-h-0 overflow-hidden">
+              <SandboxSpendingTab sandboxId={sandbox.id} />
+            </TabsContent>
+          )}
         </Tabs>
       </SheetContent>
     </Sheet>

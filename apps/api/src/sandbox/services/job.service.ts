@@ -16,6 +16,8 @@ import { JobStateHandlerService } from './job-state-handler.service'
 import { propagation, context as otelContext } from '@opentelemetry/api'
 import { PaginatedList } from '../../common/interfaces/paginated-list.interface'
 
+const REDIS_BLOCKING_COMMAND_TIMEOUT_BUFFER_MS = 3_000
+
 @Injectable()
 export class JobService {
   private readonly logger = new Logger(JobService.name)
@@ -50,28 +52,28 @@ export class JobService {
     const encodedPayload = typeof payload === 'string' ? payload : payload ? JSON.stringify(payload) : undefined
 
     try {
-      const savedJob = await repo.save(
-        new Job({
-          type,
-          runnerId,
-          resourceType,
-          resourceId,
-          status: JobStatus.PENDING,
-          payload: encodedPayload,
-          traceContext,
-        }),
-      )
+      const job = new Job({
+        type,
+        runnerId,
+        resourceType,
+        resourceId,
+        status: JobStatus.PENDING,
+        payload: encodedPayload,
+        traceContext,
+      })
+
+      await repo.insert(job)
 
       // Log with context-specific info
       const contextInfo = resourceId ? `${resourceType} ${resourceId}` : 'N/A'
 
-      this.logger.debug(`Created job ${savedJob.id} of type ${type} for ${contextInfo} on runner ${runnerId}`)
+      this.logger.debug(`Created job ${job.id} of type ${type} for ${contextInfo} on runner ${runnerId}`)
 
       // Notify runner via Redis - happens outside transaction
       // If transaction rolls back, notification is harmless (runner will poll and find nothing)
-      await this.notifyRunner(runnerId, savedJob.id)
+      await this.notifyRunner(runnerId, job.id)
 
-      return savedJob
+      return job
     } catch (error) {
       if (error.code === '23505') {
         if (error.constraint === 'IDX_UNIQUE_INCOMPLETE_JOB') {
@@ -130,7 +132,10 @@ export class JobService {
     try {
       this.logger.debug(`No existing jobs, runner ${runnerId} starting BRPOP with timeout ${maxTimeout}s`)
 
-      blockingClient = this.redis.duplicate()
+      blockingClient = this.redis.duplicate({
+        commandTimeout: maxTimeout * 1000 + REDIS_BLOCKING_COMMAND_TIMEOUT_BUFFER_MS,
+        retryStrategy: () => null,
+      })
 
       // Wrap BRPOP in a promise that can be aborted
       const brpopPromise = blockingClient.brpop(queueKey, maxTimeout)
@@ -191,9 +196,9 @@ export class JobService {
       // Always close the blocking client to prevent connection leaks
       if (blockingClient) {
         try {
-          await blockingClient.quit()
+          blockingClient.disconnect()
         } catch (error) {
-          this.logger.warn(`Failed to close blocking Redis client: ${error.message}`)
+          this.logger.warn(`Failed to disconnect blocking Redis client for runner ${runnerId}: ${error.message}`)
         }
       }
     }
@@ -218,6 +223,10 @@ export class JobService {
     const job = await this.findOne(jobId)
     if (!job) {
       throw new NotFoundException(`Job with ID ${jobId} not found`)
+    }
+
+    if (!this.isValidStatusTransition(job.status, status)) {
+      throw new ConflictException(`Invalid job status transition from ${job.status} to ${status} for job ${jobId}`)
     }
 
     job.status = status
@@ -346,6 +355,21 @@ export class JobService {
     }
 
     return null
+  }
+
+  private isValidStatusTransition(currentStatus: JobStatus, newStatus: JobStatus): boolean {
+    if (currentStatus === newStatus) {
+      return true
+    }
+
+    const allowedTransitions: Record<JobStatus, JobStatus[]> = {
+      [JobStatus.PENDING]: [JobStatus.IN_PROGRESS, JobStatus.FAILED],
+      [JobStatus.IN_PROGRESS]: [JobStatus.COMPLETED, JobStatus.FAILED],
+      [JobStatus.COMPLETED]: [],
+      [JobStatus.FAILED]: [],
+    }
+
+    return allowedTransitions[currentStatus]?.includes(newStatus) ?? false
   }
 
   private getRunnerQueueKey(runnerId: string): string {

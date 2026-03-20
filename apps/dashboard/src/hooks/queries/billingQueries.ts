@@ -8,7 +8,10 @@ import { useSelectedOrganization } from '@/hooks/useSelectedOrganization'
 import { OrganizationUserRoleEnum } from '@daytonaio/api-client'
 import { UseQueryOptions } from '@tanstack/react-query'
 import { useOrganizationBillingPortalUrlQuery } from './useOrganizationBillingPortalUrlQuery'
-import { useOrganizationEmailsQuery } from './useOrganizationEmailsQuery'
+import {
+  useFetchOrganizationCheckoutUrlQuery,
+  useIsOrganizationCheckoutUrlFetching,
+} from './useOrganizationCheckoutUrlQuery'
 import { useOrganizationInvoicesQuery } from './useOrganizationInvoicesQuery'
 import { useOrganizationTierQuery } from './useOrganizationTierQuery'
 import { useOrganizationWalletQuery } from './useOrganizationWalletQuery'
@@ -38,14 +41,20 @@ export function useOwnerTierQuery() {
   return useOrganizationTierQuery(scope)
 }
 
-export function useOwnerOrganizationEmailsQuery() {
-  const scope = useSelectedOrgBillingScope()
-  return useOrganizationEmailsQuery(scope)
-}
-
 export function useOwnerBillingPortalUrlQuery() {
   const scope = useSelectedOrgBillingScope()
   return useOrganizationBillingPortalUrlQuery(scope)
+}
+
+export function useFetchOwnerCheckoutUrlQuery() {
+  const { organizationId } = useSelectedOrgBillingScope()
+  const fetchCheckoutUrl = useFetchOrganizationCheckoutUrlQuery()
+  return () => fetchCheckoutUrl(organizationId)
+}
+
+export function useIsOwnerCheckoutUrlFetching() {
+  const { organizationId } = useSelectedOrgBillingScope()
+  return useIsOrganizationCheckoutUrlFetching(organizationId)
 }
 
 export function useOwnerInvoicesQuery(page?: number, perPage?: number) {

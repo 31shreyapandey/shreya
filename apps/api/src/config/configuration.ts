@@ -20,10 +20,19 @@ const configuration = {
       enabled: process.env.DB_TLS_ENABLED === 'true',
       rejectUnauthorized: process.env.DB_TLS_REJECT_UNAUTHORIZED !== 'false',
     },
+    pool: {
+      max: process.env.DB_POOL_MAX && parseInt(process.env.DB_POOL_MAX, 10),
+      min: process.env.DB_POOL_MIN && parseInt(process.env.DB_POOL_MIN, 10),
+      idleTimeoutMillis: process.env.DB_POOL_IDLE_TIMEOUT_MS && parseInt(process.env.DB_POOL_IDLE_TIMEOUT_MS, 10),
+      connectionTimeoutMillis:
+        process.env.DB_POOL_CONNECTION_TIMEOUT_MS && parseInt(process.env.DB_POOL_CONNECTION_TIMEOUT_MS, 10),
+    },
   },
   redis: {
     host: process.env.REDIS_HOST,
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    username: process.env.REDIS_USERNAME,
+    password: process.env.REDIS_PASSWORD,
     tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
   },
   posthog: {
@@ -77,6 +86,7 @@ const configuration = {
     accountId: process.env.S3_ACCOUNT_ID,
     roleName: process.env.S3_ROLE_NAME,
   },
+  notificationGatewayDisabled: process.env.NOTIFICATION_GATEWAY_DISABLED === 'true',
   skipConnections: process.env.SKIP_CONNECTIONS === 'true',
   maxAutoArchiveInterval: parseInt(process.env.MAX_AUTO_ARCHIVE_INTERVAL || '43200', 10),
   maintananceMode: process.env.MAINTENANCE_MODE === 'true',
@@ -137,6 +147,9 @@ const configuration = {
     authToken: process.env.SVIX_AUTH_TOKEN,
     serverUrl: process.env.SVIX_SERVER_URL,
   },
+  healthCheck: {
+    apiKey: process.env.HEALTH_CHECK_API_KEY,
+  },
   sshGateway: {
     apiKey: process.env.SSH_GATEWAY_API_KEY,
     command: process.env.SSH_GATEWAY_COMMAND,
@@ -147,6 +160,7 @@ const configuration = {
     process.env.ORGANIZATION_SANDBOX_DEFAULT_LIMITED_NETWORK_EGRESS === 'true',
   pylonAppId: process.env.PYLON_APP_ID,
   billingApiUrl: process.env.BILLING_API_URL,
+  analyticsApiUrl: process.env.ANALYTICS_API_URL,
   defaultRunner: {
     domain: process.env.DEFAULT_RUNNER_DOMAIN,
     apiKey: process.env.DEFAULT_RUNNER_API_KEY,
@@ -288,6 +302,27 @@ const configuration = {
     userCacheTtlSeconds: parseInt(process.env.API_KEY_USER_CACHE_TTL_SECONDS || '60', 10),
   },
   runnerHealthTimeout: parseInt(process.env.RUNNER_HEALTH_TIMEOUT_SECONDS || '3', 10),
+  warmPool: {
+    candidateLimit: parseInt(process.env.WARM_POOL_CANDIDATE_LIMIT || '300', 10),
+  },
+  sandboxOtel: {
+    endpointUrl: process.env.SANDBOX_OTEL_ENDPOINT_URL,
+  },
+  otelCollector: {
+    apiKey: process.env.OTEL_COLLECTOR_API_KEY,
+  },
+  clickhouse: {
+    host: process.env.CLICKHOUSE_HOST,
+    port: parseInt(process.env.CLICKHOUSE_PORT || '8123', 10),
+    database: process.env.CLICKHOUSE_DATABASE || 'otel',
+    username: process.env.CLICKHOUSE_USERNAME || 'default',
+    password: process.env.CLICKHOUSE_PASSWORD,
+    protocol: process.env.CLICKHOUSE_PROTOCOL || 'https',
+  },
+  encryption: {
+    key: process.env.ENCRYPTION_KEY,
+    salt: process.env.ENCRYPTION_SALT,
+  },
 }
 
 export { configuration }

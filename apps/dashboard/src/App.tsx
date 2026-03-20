@@ -12,13 +12,14 @@ import { NotificationSocketProvider } from '@/providers/NotificationSocketProvid
 import { OrganizationsProvider } from '@/providers/OrganizationsProvider'
 import { SelectedOrganizationProvider } from '@/providers/SelectedOrganizationProvider'
 import { UserOrganizationInvitationsProvider } from '@/providers/UserOrganizationInvitationsProvider'
+import { initPylon } from '@/vendor/pylon'
 import { OrganizationRolePermissionsEnum, OrganizationUserRoleEnum } from '@daytonaio/api-client'
 import { useFeatureFlagEnabled, usePostHog } from 'posthog-js/react'
 import React, { Suspense, useEffect } from 'react'
 import { useAuth } from 'react-oidc-context'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { BannerProvider } from './components/Banner'
-import { CommandPaletteProvider, useIsCommandPaletteEnabled } from './components/CommandPalette'
+import { CommandPaletteProvider } from './components/CommandPalette'
 import LoadingFallback from './components/LoadingFallback'
 import { Button } from './components/ui/button'
 import {
@@ -33,16 +34,17 @@ import { DAYTONA_DOCS_URL, DAYTONA_SLACK_URL } from './constants/ExternalLinks'
 import { FeatureFlags } from './enums/FeatureFlags'
 import { RoutePath, getRouteSubPath } from './enums/RoutePath'
 import { useConfig } from './hooks/useConfig'
-import { addPylonWidget } from './lib/pylon-widget'
 import AccountSettings from './pages/AccountSettings'
 import AuditLogs from './pages/AuditLogs'
 import Dashboard from './pages/Dashboard'
 import EmailVerify from './pages/EmailVerify'
+import Experimental from './pages/Experimental'
 import Keys from './pages/Keys'
 import LandingPage from './pages/LandingPage'
 import Limits from './pages/Limits'
 import Logout from './pages/Logout'
 import NotFound from './pages/NotFound'
+import Playground from './pages/Playground'
 import Regions from './pages/Regions'
 import Registries from './pages/Registries'
 import Runners from './pages/Runners'
@@ -51,8 +53,12 @@ import Snapshots from './pages/Snapshots'
 import Spending from './pages/Spending'
 import Volumes from './pages/Volumes'
 import Wallet from './pages/Wallet'
+import WebhookEndpointDetails from './pages/WebhookEndpointDetails'
+import Webhooks from './pages/Webhooks'
+import { SandboxDetails } from './components/sandboxes'
 import { ApiProvider } from './providers/ApiProvider'
 import { RegionsProvider } from './providers/RegionsProvider'
+import { SvixProvider } from './providers/SvixProvider'
 
 // Simple redirection components for external URLs
 const DocsRedirect = () => {
@@ -75,6 +81,7 @@ function App() {
   const config = useConfig()
   const location = useLocation()
   const posthog = usePostHog()
+
   const { error: authError, isAuthenticated, user, signoutRedirect } = useAuth()
 
   useEffect(() => {
@@ -85,8 +92,7 @@ function App() {
       })
     }
     if (import.meta.env.PROD && config.pylonAppId && isAuthenticated && user) {
-      addPylonWidget(config.pylonAppId)
-      window.pylon = {
+      initPylon(config.pylonAppId, {
         chat_settings: {
           app_id: config.pylonAppId,
           email: user.profile.email || '',
@@ -94,7 +100,7 @@ function App() {
           avatar_url: user.profile.picture,
           email_hash: user.profile?.email_hash as string | undefined,
         },
-      }
+      })
     }
   }, [isAuthenticated, user, posthog, config.pylonAppId])
 
@@ -106,8 +112,6 @@ function App() {
       })
     }
   }, [location, posthog])
-
-  const cmdkEnabled = useIsCommandPaletteEnabled()
 
   if (authError) {
     return (
@@ -141,7 +145,7 @@ function App() {
                   <RegionsProvider>
                     <UserOrganizationInvitationsProvider>
                       <NotificationSocketProvider>
-                        <CommandPaletteProvider enableGlobalShortcut={cmdkEnabled}>
+                        <CommandPaletteProvider>
                           <BannerProvider>
                             <Dashboard />
                           </BannerProvider>
@@ -158,6 +162,7 @@ function App() {
         <Route index element={<Navigate to={`${getRouteSubPath(RoutePath.SANDBOXES)}${location.search}`} replace />} />
         <Route path={getRouteSubPath(RoutePath.KEYS)} element={<Keys />} />
         <Route path={getRouteSubPath(RoutePath.SANDBOXES)} element={<Sandboxes />} />
+        <Route path={getRouteSubPath(RoutePath.SANDBOX_DETAILS)} element={<SandboxDetails />} />
         <Route path={getRouteSubPath(RoutePath.SNAPSHOTS)} element={<Snapshots />} />
         <Route path={getRouteSubPath(RoutePath.REGISTRIES)} element={<Registries />} />
         <Route
@@ -257,6 +262,31 @@ function App() {
         />
         <Route path={getRouteSubPath(RoutePath.USER_INVITATIONS)} element={<UserOrganizationInvitations />} />
         <Route path={getRouteSubPath(RoutePath.ONBOARDING)} element={<Onboarding />} />
+        <Route
+          path={getRouteSubPath(RoutePath.EXPERIMENTAL)}
+          element={
+            <OwnerAccessOrganizationPageWrapper>
+              <Experimental />
+            </OwnerAccessOrganizationPageWrapper>
+          }
+        />
+        <Route path={getRouteSubPath(RoutePath.PLAYGROUND)} element={<Playground />} />
+        <Route
+          path={getRouteSubPath(RoutePath.WEBHOOKS)}
+          element={
+            <SvixProvider>
+              <Webhooks />
+            </SvixProvider>
+          }
+        />
+        <Route
+          path={getRouteSubPath(RoutePath.WEBHOOK_ENDPOINT_DETAILS)}
+          element={
+            <SvixProvider>
+              <WebhookEndpointDetails />
+            </SvixProvider>
+          }
+        />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

@@ -22,6 +22,7 @@ import "github.com/daytonaio/daytona/libs/sdk-go/pkg/types"
 - [type ExecutionArtifacts](<#ExecutionArtifacts>)
 - [type ExecutionError](<#ExecutionError>)
 - [type ExecutionResult](<#ExecutionResult>)
+- [type ExperimentalConfig](<#ExperimentalConfig>)
 - [type FileDownloadRequest](<#FileDownloadRequest>)
 - [type FileDownloadResponse](<#FileDownloadResponse>)
 - [type FileInfo](<#FileInfo>)
@@ -34,6 +35,7 @@ import "github.com/daytonaio/daytona/libs/sdk-go/pkg/types"
 - [type OutputMessage](<#OutputMessage>)
 - [type PaginatedSnapshots](<#PaginatedSnapshots>)
 - [type Position](<#Position>)
+- [type PreviewLink](<#PreviewLink>)
 - [type PtyResult](<#PtyResult>)
 - [type PtySessionInfo](<#PtySessionInfo>)
 - [type PtySize](<#PtySize>)
@@ -143,6 +145,7 @@ type DaytonaConfig struct {
     OrganizationID string
     APIUrl         string
     Target         string
+    Experimental   *ExperimentalConfig
 }
 ```
 
@@ -195,6 +198,17 @@ type ExecutionResult struct {
     Stderr string
     Charts []Chart         // Optional charts from matplotlib
     Error  *ExecutionError // nil = success, non-nil = execution failed
+}
+```
+
+<a name="ExperimentalConfig"></a>
+## type ExperimentalConfig
+
+ExperimentalConfig holds experimental feature flags for the Daytona client.
+
+```go
+type ExperimentalConfig struct {
+    OtelEnabled bool // Enable OpenTelemetry tracing and metrics
 }
 ```
 
@@ -358,6 +372,18 @@ Position represents a position in a document
 type Position struct {
     Line      int // zero-based
     Character int // zero-based
+}
+```
+
+<a name="PreviewLink"></a>
+## type PreviewLink
+
+PreviewLink contains the URL and authentication token for a sandbox preview.
+
+```go
+type PreviewLink struct {
+    URL   string
+    Token string
 }
 ```
 

@@ -23,6 +23,8 @@ var _ MappedNullable = &RunnerHealthcheck{}
 type RunnerHealthcheck struct {
 	// Runner metrics
 	Metrics *RunnerHealthMetrics `json:"metrics,omitempty"`
+	// Health status of individual services on the runner
+	ServiceHealth []RunnerServiceHealth `json:"serviceHealth,omitempty"`
 	// Runner domain
 	Domain *string `json:"domain,omitempty"`
 	// Runner proxy URL
@@ -30,7 +32,7 @@ type RunnerHealthcheck struct {
 	// Runner API URL
 	ApiUrl *string `json:"apiUrl,omitempty"`
 	// Runner app version
-	AppVersion           string `json:"appVersion"`
+	AppVersion string `json:"appVersion"`
 	AdditionalProperties map[string]interface{}
 }
 
@@ -84,6 +86,38 @@ func (o *RunnerHealthcheck) HasMetrics() bool {
 // SetMetrics gets a reference to the given RunnerHealthMetrics and assigns it to the Metrics field.
 func (o *RunnerHealthcheck) SetMetrics(v RunnerHealthMetrics) {
 	o.Metrics = &v
+}
+
+// GetServiceHealth returns the ServiceHealth field value if set, zero value otherwise.
+func (o *RunnerHealthcheck) GetServiceHealth() []RunnerServiceHealth {
+	if o == nil || IsNil(o.ServiceHealth) {
+		var ret []RunnerServiceHealth
+		return ret
+	}
+	return o.ServiceHealth
+}
+
+// GetServiceHealthOk returns a tuple with the ServiceHealth field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *RunnerHealthcheck) GetServiceHealthOk() ([]RunnerServiceHealth, bool) {
+	if o == nil || IsNil(o.ServiceHealth) {
+		return nil, false
+	}
+	return o.ServiceHealth, true
+}
+
+// HasServiceHealth returns a boolean if a field has been set.
+func (o *RunnerHealthcheck) HasServiceHealth() bool {
+	if o != nil && !IsNil(o.ServiceHealth) {
+		return true
+	}
+
+	return false
+}
+
+// SetServiceHealth gets a reference to the given []RunnerServiceHealth and assigns it to the ServiceHealth field.
+func (o *RunnerHealthcheck) SetServiceHealth(v []RunnerServiceHealth) {
+	o.ServiceHealth = v
 }
 
 // GetDomain returns the Domain field value if set, zero value otherwise.
@@ -207,7 +241,7 @@ func (o *RunnerHealthcheck) SetAppVersion(v string) {
 }
 
 func (o RunnerHealthcheck) MarshalJSON() ([]byte, error) {
-	toSerialize, err := o.ToMap()
+	toSerialize,err := o.ToMap()
 	if err != nil {
 		return []byte{}, err
 	}
@@ -218,6 +252,9 @@ func (o RunnerHealthcheck) ToMap() (map[string]interface{}, error) {
 	toSerialize := map[string]interface{}{}
 	if !IsNil(o.Metrics) {
 		toSerialize["metrics"] = o.Metrics
+	}
+	if !IsNil(o.ServiceHealth) {
+		toSerialize["serviceHealth"] = o.ServiceHealth
 	}
 	if !IsNil(o.Domain) {
 		toSerialize["domain"] = o.Domain
@@ -250,10 +287,10 @@ func (o *RunnerHealthcheck) UnmarshalJSON(data []byte) (err error) {
 	err = json.Unmarshal(data, &allProperties)
 
 	if err != nil {
-		return err
+		return err;
 	}
 
-	for _, requiredProperty := range requiredProperties {
+	for _, requiredProperty := range(requiredProperties) {
 		if _, exists := allProperties[requiredProperty]; !exists {
 			return fmt.Errorf("no value given for required property %v", requiredProperty)
 		}
@@ -273,6 +310,7 @@ func (o *RunnerHealthcheck) UnmarshalJSON(data []byte) (err error) {
 
 	if err = json.Unmarshal(data, &additionalProperties); err == nil {
 		delete(additionalProperties, "metrics")
+		delete(additionalProperties, "serviceHealth")
 		delete(additionalProperties, "domain")
 		delete(additionalProperties, "proxyUrl")
 		delete(additionalProperties, "apiUrl")
@@ -318,3 +356,5 @@ func (v *NullableRunnerHealthcheck) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

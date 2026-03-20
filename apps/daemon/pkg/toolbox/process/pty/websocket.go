@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	log "github.com/sirupsen/logrus"
 )
 
 // attachWebSocket connects a new WebSocket client to the PTY session
@@ -19,12 +18,13 @@ func (s *PTYSession) attachWebSocket(ws *websocket.Conn) {
 		id:   uuid.NewString(),
 		conn: ws,
 		send: make(chan []byte, 256), // if full, drop slow client
+		done: make(chan struct{}),
 	}
 
 	// Register client FIRST so it can receive PTY output via broadcast
 	s.clients.Set(cl.id, cl)
 	count := s.clients.Count()
-	log.Infof("Client %s attached to PTY session %s (clients=%d)", cl.id, s.info.ID, count)
+	s.logger.Debug("Client attached to PTY session", "clientId", cl.id, "sessionId", s.info.ID, "clientCount", count)
 
 	// Start PTY data flow - writer (PTY -> this client)
 	go s.clientWriter(cl)
@@ -47,7 +47,7 @@ func (s *PTYSession) attachWebSocket(ws *websocket.Conn) {
 	cl.close()
 
 	remaining := s.clients.Count()
-	log.Infof("Client %s detached from PTY session %s (clients=%d)", cl.id, s.info.ID, remaining)
+	s.logger.Debug("Client detached from PTY session", "clientId", cl.id, "sessionId", s.info.ID, "clientCount", remaining)
 }
 
 // clientWriter sends PTY output to a specific WebSocket client
@@ -56,10 +56,9 @@ func (s *PTYSession) clientWriter(cl *wsClient) {
 		select {
 		case <-s.ctx.Done():
 			return
-		case b, ok := <-cl.send:
-			if !ok {
-				return
-			}
+		case <-cl.done:
+			return
+		case b := <-cl.send:
 			_ = cl.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := cl.conn.WriteMessage(websocket.BinaryMessage, b); err != nil {
 				return
@@ -77,7 +76,7 @@ func (s *PTYSession) clientReader(cl *wsClient) {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
 			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				log.Debug("ws read error:", err)
+				s.logger.Debug("ws read error", "error", err)
 			}
 			return
 		}
@@ -99,6 +98,8 @@ func (s *PTYSession) broadcast(b []byte) {
 	for id, cl := range s.clients.Items() {
 		select {
 		case cl.send <- b:
+		case <-cl.done:
+			// client is shutting down, skip
 		default:
 			// client's outbound queue is full -> drop the client
 			go func(id string, cl *wsClient) {

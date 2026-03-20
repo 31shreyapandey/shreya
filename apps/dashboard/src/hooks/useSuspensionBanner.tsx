@@ -9,7 +9,7 @@ import { Organization } from '@daytonaio/api-client'
 import { addHours, formatDistanceToNow } from 'date-fns'
 import { CreditCardIcon, MailIcon } from 'lucide-react'
 import { useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 const SUSPENSION_BANNER_ID = 'suspension-banner'
 
@@ -34,6 +34,8 @@ type Suspension = Pick<
 export function useSuspensionBanner(suspension?: Suspension | null) {
   const { addBanner, removeBanner } = useBanner()
   const navigate = useNavigate()
+  const location = useLocation()
+  const path = location?.pathname
   const previousSuspendedRef = useRef<boolean | undefined>(undefined)
 
   useEffect(() => {
@@ -62,10 +64,13 @@ export function useSuspensionBanner(suspension?: Suspension | null) {
           title: 'Setup Required',
           description: 'Add a payment method to start creating sandboxes.',
           icon: <CreditCardIcon className="h-4 w-4 flex-shrink-0 text-current" />,
-          action: {
-            label: 'Go to Billing',
-            onClick: () => navigate(RoutePath.BILLING_WALLET),
-          },
+          action:
+            path !== RoutePath.BILLING_WALLET
+              ? {
+                  label: 'Go to Billing',
+                  onClick: () => navigate(RoutePath.BILLING_WALLET),
+                }
+              : undefined,
           isDismissible: false,
         })
       } else if (reason === VERIFY_EMAIL_REASON) {
@@ -87,8 +92,12 @@ export function useSuspensionBanner(suspension?: Suspension | null) {
         ? addHours(suspendedAtDate, suspension.suspensionCleanupGracePeriodHours ?? 0)
         : null
 
+      const cleanupDatePassed = cleanupDate !== null && cleanupDate <= new Date()
+
       const cleanupText = cleanupDate
-        ? `Sandboxes will be stopped ${formatDistanceToNow(cleanupDate, { addSuffix: true })}`
+        ? cleanupDatePassed
+          ? 'Sandboxes will be stopped'
+          : `Sandboxes will be stopped ${formatDistanceToNow(cleanupDate, { addSuffix: true })}`
         : 'Sandboxes will be stopped soon'
 
       addBanner({
@@ -96,10 +105,13 @@ export function useSuspensionBanner(suspension?: Suspension | null) {
         variant: 'error',
         title: 'Credits depleted',
         description: cleanupText,
-        action: {
-          label: 'Go to Billing',
-          onClick: () => navigate(RoutePath.BILLING_WALLET),
-        },
+        action:
+          path !== RoutePath.BILLING_WALLET
+            ? {
+                label: 'Go to Billing',
+                onClick: () => navigate(RoutePath.BILLING_WALLET),
+              }
+            : undefined,
         isDismissible: false,
       })
       return
@@ -110,8 +122,11 @@ export function useSuspensionBanner(suspension?: Suspension | null) {
       ? addHours(suspendedAtDate, suspension.suspensionCleanupGracePeriodHours ?? 0)
       : null
 
+    const cleanupDatePassed = cleanupDate !== null && cleanupDate <= new Date()
     const cleanupText = cleanupDate
-      ? `Sandboxes will be stopped ${formatDistanceToNow(cleanupDate, { addSuffix: true })}`
+      ? cleanupDatePassed
+        ? 'Sandboxes will be stopped'
+        : `Sandboxes will be stopped ${formatDistanceToNow(cleanupDate, { addSuffix: true })}`
       : 'Sandboxes will be stopped soon'
 
     addBanner({
@@ -121,5 +136,5 @@ export function useSuspensionBanner(suspension?: Suspension | null) {
       description: reason ? `${reason}. ${cleanupText}` : cleanupText,
       isDismissible: false,
     })
-  }, [suspension, addBanner, removeBanner, navigate])
+  }, [suspension, addBanner, removeBanner, navigate, path])
 }

@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"strings"
 
+	common_errors "github.com/daytonaio/common-go/pkg/errors"
 	"github.com/daytonaio/daemon/internal/util"
 	"github.com/daytonaio/daemon/pkg/session"
 	"github.com/gin-gonic/gin"
-	log "github.com/sirupsen/logrus"
 )
 
 // SessionExecuteCommand godoc
@@ -31,6 +31,11 @@ import (
 //	@id				SessionExecuteCommand
 func (s *SessionController) SessionExecuteCommand(c *gin.Context) {
 	sessionId := c.Param("sessionId")
+
+	if sessionId == util.EntrypointSessionID {
+		c.Error(common_errors.NewBadRequestError(errors.New("can't execute command in entrypoint session")))
+		return
+	}
 
 	var request SessionExecuteRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -52,13 +57,13 @@ func (s *SessionController) SessionExecuteCommand(c *gin.Context) {
 	sdkVersion := util.ExtractSdkVersionFromHeader(c.Request.Header)
 	versionComparison, err := util.CompareVersions(sdkVersion, "0.27.0-0")
 	if err != nil {
-		log.Error(err)
+		s.logger.ErrorContext(c.Request.Context(), "failed to compare versions", "error", err)
 		versionComparison = util.Pointer(1)
 	}
 
 	isCombinedOutput := session.IsCombinedOutput(sdkVersion, versionComparison, c.Request.Header)
 
-	executeResult, err := s.sessionService.Execute(sessionId, request.Command, request.RunAsync, isCombinedOutput)
+	executeResult, err := s.sessionService.Execute(sessionId, util.EmptyCommandID, request.Command, request.RunAsync, isCombinedOutput, request.SuppressInputEcho)
 	if err != nil {
 		c.Error(fmt.Errorf("failed to execute command: %w", err))
 		return

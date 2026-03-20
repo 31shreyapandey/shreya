@@ -18,6 +18,7 @@ import (
 	"golang.org/x/oauth2"
 
 	common_errors "github.com/daytonaio/common-go/pkg/errors"
+	"github.com/daytonaio/common-go/pkg/utils"
 	apiclient "github.com/daytonaio/daytona/libs/api-client-go"
 )
 
@@ -107,7 +108,11 @@ func (p *Proxy) AuthCallback(ctx *gin.Context) {
 		return
 	}
 
-	hasAccess := p.hasSandboxAccess(ctx, sandboxId, token.AccessToken)
+	hasAccess, err := p.hasSandboxAccess(ctx, sandboxId, token.AccessToken)
+	if err != nil {
+		ctx.Error(common_errors.NewInternalServerError(fmt.Errorf("failed to verify sandbox access: %w", err)))
+		return
+	}
 	if !hasAccess {
 		ctx.Error(common_errors.NewNotFoundError(errors.New("sandbox not found")))
 		return
@@ -181,7 +186,31 @@ func (p *Proxy) getAuthUrl(ctx *gin.Context, sandboxId string) (string, error) {
 	return authURL, nil
 }
 
-func (p *Proxy) hasSandboxAccess(ctx context.Context, sandboxId string, authToken string) bool {
+func (p *Proxy) hasSandboxAccess(ctx context.Context, sandboxId string, authToken string) (bool, error) {
+	apiClient := p.getUserApiClient(ctx, authToken)
+
+	_, res, err := apiClient.PreviewAPI.HasSandboxAccess(context.Background(), sandboxId).Execute()
+	if res != nil && res.StatusCode == http.StatusOK {
+		return true, nil
+	}
+	openapiErr := common_errors.ConvertOpenAPIError(err)
+
+	if openapiErr != nil {
+		if res != nil && res.StatusCode >= 400 && res.StatusCode < 500 &&
+			res.StatusCode != http.StatusRequestTimeout && res.StatusCode != http.StatusTooManyRequests {
+			return false, nil
+		}
+		if !common_errors.IsRetryableOpenAPIError(openapiErr) {
+			return false, &utils.NonRetryableError{Err: openapiErr}
+		}
+
+		return false, openapiErr
+	}
+
+	return false, nil
+}
+
+func (p *Proxy) getUserApiClient(ctx context.Context, authToken string) *apiclient.APIClient {
 	clientConfig := apiclient.NewConfiguration()
 	clientConfig.Servers = apiclient.ServerConfigurations{
 		{
@@ -189,12 +218,13 @@ func (p *Proxy) hasSandboxAccess(ctx context.Context, sandboxId string, authToke
 		},
 	}
 	clientConfig.AddDefaultHeader("Authorization", "Bearer "+authToken)
+	if ginCtx, ok := ctx.(*gin.Context); ok {
+		clientConfig.AddDefaultHeader("X-Forwarded-For", ginCtx.ClientIP())
+	}
 
 	apiClient := apiclient.NewAPIClient(clientConfig)
 
-	_, res, _ := apiClient.PreviewAPI.HasSandboxAccess(ctx, sandboxId).Execute()
-
-	return res != nil && res.StatusCode == http.StatusOK
+	return apiClient
 }
 
 func (p *Proxy) getOidcEndpoint(ctx context.Context) (context.Context, *oauth2.Endpoint, error) {

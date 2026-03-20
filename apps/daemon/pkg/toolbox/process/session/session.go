@@ -4,13 +4,13 @@
 package session
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	common_errors "github.com/daytonaio/common-go/pkg/errors"
 	"github.com/daytonaio/daemon/internal/util"
-	log "github.com/sirupsen/logrus"
 )
 
 // CreateSession godoc
@@ -32,11 +32,16 @@ func (s *SessionController) CreateSession(c *gin.Context) {
 		return
 	}
 
+	if request.SessionId == util.EntrypointSessionID {
+		c.Error(common_errors.NewBadRequestError(errors.New("provided session ID is reserved and cannot be created/overridden")))
+		return
+	}
+
 	// for backward compatibility (only sdk clients before 0.103.X), we use the home directory as the default directory
 	sdkVersion := util.ExtractSdkVersionFromHeader(c.Request.Header)
 	versionComparison, err := util.CompareVersions(sdkVersion, "0.103.0-0")
 	if err != nil {
-		log.Error(err)
+		s.logger.ErrorContext(c.Request.Context(), "failed to compare versions", "error", err)
 		versionComparison = util.Pointer(1)
 	}
 
@@ -63,6 +68,11 @@ func (s *SessionController) CreateSession(c *gin.Context) {
 //	@id				DeleteSession
 func (s *SessionController) DeleteSession(c *gin.Context) {
 	sessionId := c.Param("sessionId")
+
+	if sessionId == util.EntrypointSessionID {
+		c.Error(common_errors.NewBadRequestError(errors.New("can't delete entrypoint session")))
+		return
+	}
 
 	err := s.sessionService.Delete(c.Request.Context(), sessionId)
 	if err != nil {
@@ -144,4 +154,24 @@ func (s *SessionController) GetSessionCommand(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, CommandToDTO(command))
+}
+
+// GetEntrypointSession godoc
+//
+//	@Summary		Get entrypoint session details
+//	@Description	Get details of an entrypoint session including its commands
+//	@Tags			process
+//	@Produce		json
+//	@Success		200	{object}	SessionDTO
+//	@Router			/process/session/entrypoint [get]
+//
+//	@id				GetEntrypointSession
+func (s *SessionController) GetEntrypointSession(c *gin.Context) {
+	session, err := s.sessionService.Get(util.EntrypointSessionID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, SessionToDTO(session))
 }

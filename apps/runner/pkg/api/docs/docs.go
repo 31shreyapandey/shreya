@@ -174,64 +174,6 @@ const docTemplate = `{
                         }
                     }
                 }
-            },
-            "delete": {
-                "description": "Remove a sandbox that has been previously destroyed",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "sandbox"
-                ],
-                "summary": "Remove a destroyed sandbox",
-                "operationId": "RemoveDestroyed",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Sandbox ID",
-                        "name": "sandboxId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Sandbox removed",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
             }
         },
         "/sandboxes/{sandboxId}/backup": {
@@ -683,7 +625,6 @@ const docTemplate = `{
             "post": {
                 "description": "Start sandbox",
                 "produces": [
-                    "application/json",
                     "application/json"
                 ],
                 "tags": [
@@ -706,6 +647,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Auth token",
+                        "name": "token",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -989,7 +936,7 @@ const docTemplate = `{
         },
         "/snapshots/build": {
             "post": {
-                "description": "Build a snapshot from a Dockerfile and context hashes",
+                "description": "Build a snapshot from a Dockerfile and context hashes. The operation runs asynchronously and returns 202 immediately.",
                 "tags": [
                     "snapshots"
                 ],
@@ -1007,8 +954,8 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "Snapshot successfully built",
+                    "202": {
+                        "description": "Snapshot build started",
                         "schema": {
                             "type": "string"
                         }
@@ -1108,7 +1055,7 @@ const docTemplate = `{
         },
         "/snapshots/info": {
             "get": {
-                "description": "Get information about a specified snapshot including size and entrypoint",
+                "description": "Get information about a specified snapshot including size and entrypoint. Returns 422 if the last pull/build operation failed, with the error reason in the message.",
                 "produces": [
                     "application/json"
                 ],
@@ -1147,6 +1094,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
@@ -1275,7 +1228,7 @@ const docTemplate = `{
         },
         "/snapshots/pull": {
             "post": {
-                "description": "Pull a snapshot from a registry and optionally push to another registry",
+                "description": "Pull a snapshot from a registry and optionally push to another registry. The operation runs asynchronously and returns 202 immediately.",
                 "tags": [
                     "snapshots"
                 ],
@@ -1293,8 +1246,8 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "Snapshot successfully pulled",
+                    "202": {
+                        "description": "Snapshot pull started",
                         "schema": {
                             "type": "string"
                         }
@@ -1515,6 +1468,9 @@ const docTemplate = `{
                 "userId"
             ],
             "properties": {
+                "authToken": {
+                    "type": "string"
+                },
                 "cpuQuota": {
                     "type": "integer",
                     "minimum": 1
@@ -1557,11 +1513,24 @@ const docTemplate = `{
                 "networkBlockAll": {
                     "type": "boolean"
                 },
+                "organizationId": {
+                    "description": "Nullable for backward compatibility",
+                    "type": "string"
+                },
                 "osUser": {
+                    "type": "string"
+                },
+                "otelEndpoint": {
+                    "type": "string"
+                },
+                "regionId": {
                     "type": "string"
                 },
                 "registry": {
                     "$ref": "#/definitions/RegistryDTO"
+                },
+                "skipStart": {
+                    "type": "boolean"
                 },
                 "snapshot": {
                     "type": "string"
@@ -1585,9 +1554,7 @@ const docTemplate = `{
             "description": "Error response",
             "type": "object",
             "required": [
-                "code",
                 "message",
-                "method",
                 "path",
                 "statusCode",
                 "timestamp"
@@ -1681,7 +1648,6 @@ const docTemplate = `{
             "required": [
                 "errorReason",
                 "osUser",
-                "snapshot",
                 "userId"
             ],
             "properties": {
@@ -1766,6 +1732,10 @@ const docTemplate = `{
                     "type": "integer",
                     "minimum": 1
                 },
+                "disk": {
+                    "type": "integer",
+                    "minimum": 1
+                },
                 "gpu": {
                     "type": "integer",
                     "minimum": 0
@@ -1784,6 +1754,12 @@ const docTemplate = `{
                 },
                 "metrics": {
                     "$ref": "#/definitions/RunnerMetrics"
+                },
+                "serviceHealth": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/RunnerServiceInfo"
+                    }
                 }
             }
         },
@@ -1791,13 +1767,13 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "currentAllocatedCpu": {
-                    "type": "integer"
+                    "type": "number"
                 },
                 "currentAllocatedDiskGiB": {
-                    "type": "integer"
+                    "type": "number"
                 },
                 "currentAllocatedMemoryGiB": {
-                    "type": "integer"
+                    "type": "number"
                 },
                 "currentCpuLoadAverage": {
                     "type": "number"
@@ -1816,6 +1792,24 @@ const docTemplate = `{
                 },
                 "currentStartedSandboxes": {
                     "type": "integer"
+                }
+            }
+        },
+        "RunnerServiceInfo": {
+            "type": "object",
+            "required": [
+                "healthy",
+                "serviceName"
+            ],
+            "properties": {
+                "errorReason": {
+                    "type": "string"
+                },
+                "healthy": {
+                    "type": "boolean"
+                },
+                "serviceName": {
+                    "type": "string"
                 }
             }
         },

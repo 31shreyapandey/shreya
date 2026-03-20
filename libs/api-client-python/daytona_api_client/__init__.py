@@ -111,12 +111,16 @@ from daytona_api_client.models.keyboard_hotkey_request import KeyboardHotkeyRequ
 from daytona_api_client.models.keyboard_press_request import KeyboardPressRequest
 from daytona_api_client.models.keyboard_type_request import KeyboardTypeRequest
 from daytona_api_client.models.list_branch_response import ListBranchResponse
+from daytona_api_client.models.log_entry import LogEntry
 from daytona_api_client.models.lsp_completion_params import LspCompletionParams
 from daytona_api_client.models.lsp_document_request import LspDocumentRequest
 from daytona_api_client.models.lsp_location import LspLocation
 from daytona_api_client.models.lsp_server_request import LspServerRequest
 from daytona_api_client.models.lsp_symbol import LspSymbol
 from daytona_api_client.models.match import Match
+from daytona_api_client.models.metric_data_point import MetricDataPoint
+from daytona_api_client.models.metric_series import MetricSeries
+from daytona_api_client.models.metrics_response import MetricsResponse
 from daytona_api_client.models.mouse_click_request import MouseClickRequest
 from daytona_api_client.models.mouse_click_response import MouseClickResponse
 from daytona_api_client.models.mouse_drag_request import MouseDragRequest
@@ -134,10 +138,13 @@ from daytona_api_client.models.organization_sandbox_default_limited_network_egre
 from daytona_api_client.models.organization_suspension import OrganizationSuspension
 from daytona_api_client.models.organization_usage_overview import OrganizationUsageOverview
 from daytona_api_client.models.organization_user import OrganizationUser
+from daytona_api_client.models.otel_config import OtelConfig
 from daytona_api_client.models.paginated_audit_logs import PaginatedAuditLogs
 from daytona_api_client.models.paginated_jobs import PaginatedJobs
+from daytona_api_client.models.paginated_logs import PaginatedLogs
 from daytona_api_client.models.paginated_sandboxes import PaginatedSandboxes
 from daytona_api_client.models.paginated_snapshots import PaginatedSnapshots
+from daytona_api_client.models.paginated_traces import PaginatedTraces
 from daytona_api_client.models.poll_jobs_response import PollJobsResponse
 from daytona_api_client.models.port_preview_url import PortPreviewUrl
 from daytona_api_client.models.position import Position
@@ -164,10 +171,12 @@ from daytona_api_client.models.region_usage_overview import RegionUsageOverview
 from daytona_api_client.models.registry_push_access_dto import RegistryPushAccessDto
 from daytona_api_client.models.replace_request import ReplaceRequest
 from daytona_api_client.models.replace_result import ReplaceResult
+from daytona_api_client.models.resize_sandbox import ResizeSandbox
 from daytona_api_client.models.runner import Runner
 from daytona_api_client.models.runner_full import RunnerFull
 from daytona_api_client.models.runner_health_metrics import RunnerHealthMetrics
 from daytona_api_client.models.runner_healthcheck import RunnerHealthcheck
+from daytona_api_client.models.runner_service_health import RunnerServiceHealth
 from daytona_api_client.models.runner_snapshot_dto import RunnerSnapshotDto
 from daytona_api_client.models.runner_state import RunnerState
 from daytona_api_client.models.sandbox import Sandbox
@@ -192,6 +201,8 @@ from daytona_api_client.models.ssh_access_dto import SshAccessDto
 from daytona_api_client.models.ssh_access_validation_dto import SshAccessValidationDto
 from daytona_api_client.models.storage_access_dto import StorageAccessDto
 from daytona_api_client.models.toolbox_proxy_url import ToolboxProxyUrl
+from daytona_api_client.models.trace_span import TraceSpan
+from daytona_api_client.models.trace_summary import TraceSummary
 from daytona_api_client.models.update_docker_registry import UpdateDockerRegistry
 from daytona_api_client.models.update_job_status import UpdateJobStatus
 from daytona_api_client.models.update_organization_default_region import UpdateOrganizationDefaultRegion
@@ -210,6 +221,7 @@ from daytona_api_client.models.volume_dto import VolumeDto
 from daytona_api_client.models.volume_state import VolumeState
 from daytona_api_client.models.webhook_app_portal_access import WebhookAppPortalAccess
 from daytona_api_client.models.webhook_controller_get_status200_response import WebhookControllerGetStatus200Response
+from daytona_api_client.models.webhook_event import WebhookEvent
 from daytona_api_client.models.webhook_initialization_status import WebhookInitializationStatus
 from daytona_api_client.models.windows_response import WindowsResponse
 from daytona_api_client.models.work_dir_response import WorkDirResponse
@@ -308,12 +320,16 @@ __all__ = [
     "KeyboardPressRequest",
     "KeyboardTypeRequest",
     "ListBranchResponse",
+    "LogEntry",
     "LspCompletionParams",
     "LspDocumentRequest",
     "LspLocation",
     "LspServerRequest",
     "LspSymbol",
     "Match",
+    "MetricDataPoint",
+    "MetricSeries",
+    "MetricsResponse",
     "MouseClickRequest",
     "MouseClickResponse",
     "MouseDragRequest",
@@ -331,10 +347,13 @@ __all__ = [
     "OrganizationSuspension",
     "OrganizationUsageOverview",
     "OrganizationUser",
+    "OtelConfig",
     "PaginatedAuditLogs",
     "PaginatedJobs",
+    "PaginatedLogs",
     "PaginatedSandboxes",
     "PaginatedSnapshots",
+    "PaginatedTraces",
     "PollJobsResponse",
     "PortPreviewUrl",
     "Position",
@@ -361,10 +380,12 @@ __all__ = [
     "RegistryPushAccessDto",
     "ReplaceRequest",
     "ReplaceResult",
+    "ResizeSandbox",
     "Runner",
     "RunnerFull",
     "RunnerHealthMetrics",
     "RunnerHealthcheck",
+    "RunnerServiceHealth",
     "RunnerSnapshotDto",
     "RunnerState",
     "Sandbox",
@@ -389,6 +410,8 @@ __all__ = [
     "SshAccessValidationDto",
     "StorageAccessDto",
     "ToolboxProxyUrl",
+    "TraceSpan",
+    "TraceSummary",
     "UpdateDockerRegistry",
     "UpdateJobStatus",
     "UpdateOrganizationDefaultRegion",
@@ -407,6 +430,7 @@ __all__ = [
     "VolumeState",
     "WebhookAppPortalAccess",
     "WebhookControllerGetStatus200Response",
+    "WebhookEvent",
     "WebhookInitializationStatus",
     "WindowsResponse",
     "WorkDirResponse",

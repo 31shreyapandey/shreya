@@ -57,6 +57,9 @@ module DaytonaApiClient
     # Max disk per sandbox
     attr_accessor :max_disk_per_sandbox
 
+    # Time in minutes before an unused snapshot is deactivated
+    attr_accessor :snapshot_deactivation_timeout_minutes
+
     # Sandbox default network block all
     attr_accessor :sandbox_limited_network_egress
 
@@ -71,6 +74,18 @@ module DaytonaApiClient
 
     # Sandbox lifecycle rate limit per minute
     attr_accessor :sandbox_lifecycle_rate_limit
+
+    # Experimental configuration
+    attr_accessor :experimental_config
+
+    # Authenticated rate limit TTL in seconds
+    attr_accessor :authenticated_rate_limit_ttl_seconds
+
+    # Sandbox create rate limit TTL in seconds
+    attr_accessor :sandbox_create_rate_limit_ttl_seconds
+
+    # Sandbox lifecycle rate limit TTL in seconds
+    attr_accessor :sandbox_lifecycle_rate_limit_ttl_seconds
 
     # Attribute mapping from ruby-style variable name to JSON key.
     def self.attribute_map
@@ -89,11 +104,16 @@ module DaytonaApiClient
         :'max_cpu_per_sandbox' => :'maxCpuPerSandbox',
         :'max_memory_per_sandbox' => :'maxMemoryPerSandbox',
         :'max_disk_per_sandbox' => :'maxDiskPerSandbox',
+        :'snapshot_deactivation_timeout_minutes' => :'snapshotDeactivationTimeoutMinutes',
         :'sandbox_limited_network_egress' => :'sandboxLimitedNetworkEgress',
         :'default_region_id' => :'defaultRegionId',
         :'authenticated_rate_limit' => :'authenticatedRateLimit',
         :'sandbox_create_rate_limit' => :'sandboxCreateRateLimit',
-        :'sandbox_lifecycle_rate_limit' => :'sandboxLifecycleRateLimit'
+        :'sandbox_lifecycle_rate_limit' => :'sandboxLifecycleRateLimit',
+        :'experimental_config' => :'experimentalConfig',
+        :'authenticated_rate_limit_ttl_seconds' => :'authenticatedRateLimitTtlSeconds',
+        :'sandbox_create_rate_limit_ttl_seconds' => :'sandboxCreateRateLimitTtlSeconds',
+        :'sandbox_lifecycle_rate_limit_ttl_seconds' => :'sandboxLifecycleRateLimitTtlSeconds'
       }
     end
 
@@ -124,11 +144,16 @@ module DaytonaApiClient
         :'max_cpu_per_sandbox' => :'Float',
         :'max_memory_per_sandbox' => :'Float',
         :'max_disk_per_sandbox' => :'Float',
+        :'snapshot_deactivation_timeout_minutes' => :'Float',
         :'sandbox_limited_network_egress' => :'Boolean',
         :'default_region_id' => :'String',
         :'authenticated_rate_limit' => :'Float',
         :'sandbox_create_rate_limit' => :'Float',
-        :'sandbox_lifecycle_rate_limit' => :'Float'
+        :'sandbox_lifecycle_rate_limit' => :'Float',
+        :'experimental_config' => :'Object',
+        :'authenticated_rate_limit_ttl_seconds' => :'Float',
+        :'sandbox_create_rate_limit_ttl_seconds' => :'Float',
+        :'sandbox_lifecycle_rate_limit_ttl_seconds' => :'Float'
       }
     end
 
@@ -137,7 +162,10 @@ module DaytonaApiClient
       Set.new([
         :'authenticated_rate_limit',
         :'sandbox_create_rate_limit',
-        :'sandbox_lifecycle_rate_limit'
+        :'sandbox_lifecycle_rate_limit',
+        :'authenticated_rate_limit_ttl_seconds',
+        :'sandbox_create_rate_limit_ttl_seconds',
+        :'sandbox_lifecycle_rate_limit_ttl_seconds'
       ])
     end
 
@@ -241,6 +269,12 @@ module DaytonaApiClient
         self.max_disk_per_sandbox = nil
       end
 
+      if attributes.key?(:'snapshot_deactivation_timeout_minutes')
+        self.snapshot_deactivation_timeout_minutes = attributes[:'snapshot_deactivation_timeout_minutes']
+      else
+        self.snapshot_deactivation_timeout_minutes = 20160
+      end
+
       if attributes.key?(:'sandbox_limited_network_egress')
         self.sandbox_limited_network_egress = attributes[:'sandbox_limited_network_egress']
       else
@@ -267,6 +301,30 @@ module DaytonaApiClient
         self.sandbox_lifecycle_rate_limit = attributes[:'sandbox_lifecycle_rate_limit']
       else
         self.sandbox_lifecycle_rate_limit = nil
+      end
+
+      if attributes.key?(:'experimental_config')
+        self.experimental_config = attributes[:'experimental_config']
+      else
+        self.experimental_config = nil
+      end
+
+      if attributes.key?(:'authenticated_rate_limit_ttl_seconds')
+        self.authenticated_rate_limit_ttl_seconds = attributes[:'authenticated_rate_limit_ttl_seconds']
+      else
+        self.authenticated_rate_limit_ttl_seconds = nil
+      end
+
+      if attributes.key?(:'sandbox_create_rate_limit_ttl_seconds')
+        self.sandbox_create_rate_limit_ttl_seconds = attributes[:'sandbox_create_rate_limit_ttl_seconds']
+      else
+        self.sandbox_create_rate_limit_ttl_seconds = nil
+      end
+
+      if attributes.key?(:'sandbox_lifecycle_rate_limit_ttl_seconds')
+        self.sandbox_lifecycle_rate_limit_ttl_seconds = attributes[:'sandbox_lifecycle_rate_limit_ttl_seconds']
+      else
+        self.sandbox_lifecycle_rate_limit_ttl_seconds = nil
       end
     end
 
@@ -331,8 +389,16 @@ module DaytonaApiClient
         invalid_properties.push('invalid value for "max_disk_per_sandbox", max_disk_per_sandbox cannot be nil.')
       end
 
+      if @snapshot_deactivation_timeout_minutes.nil?
+        invalid_properties.push('invalid value for "snapshot_deactivation_timeout_minutes", snapshot_deactivation_timeout_minutes cannot be nil.')
+      end
+
       if @sandbox_limited_network_egress.nil?
         invalid_properties.push('invalid value for "sandbox_limited_network_egress", sandbox_limited_network_egress cannot be nil.')
+      end
+
+      if @experimental_config.nil?
+        invalid_properties.push('invalid value for "experimental_config", experimental_config cannot be nil.')
       end
 
       invalid_properties
@@ -356,7 +422,9 @@ module DaytonaApiClient
       return false if @max_cpu_per_sandbox.nil?
       return false if @max_memory_per_sandbox.nil?
       return false if @max_disk_per_sandbox.nil?
+      return false if @snapshot_deactivation_timeout_minutes.nil?
       return false if @sandbox_limited_network_egress.nil?
+      return false if @experimental_config.nil?
       true
     end
 
@@ -501,6 +569,16 @@ module DaytonaApiClient
     end
 
     # Custom attribute writer method with validation
+    # @param [Object] snapshot_deactivation_timeout_minutes Value to be assigned
+    def snapshot_deactivation_timeout_minutes=(snapshot_deactivation_timeout_minutes)
+      if snapshot_deactivation_timeout_minutes.nil?
+        fail ArgumentError, 'snapshot_deactivation_timeout_minutes cannot be nil'
+      end
+
+      @snapshot_deactivation_timeout_minutes = snapshot_deactivation_timeout_minutes
+    end
+
+    # Custom attribute writer method with validation
     # @param [Object] sandbox_limited_network_egress Value to be assigned
     def sandbox_limited_network_egress=(sandbox_limited_network_egress)
       if sandbox_limited_network_egress.nil?
@@ -508,6 +586,16 @@ module DaytonaApiClient
       end
 
       @sandbox_limited_network_egress = sandbox_limited_network_egress
+    end
+
+    # Custom attribute writer method with validation
+    # @param [Object] experimental_config Value to be assigned
+    def experimental_config=(experimental_config)
+      if experimental_config.nil?
+        fail ArgumentError, 'experimental_config cannot be nil'
+      end
+
+      @experimental_config = experimental_config
     end
 
     # Checks equality by comparing each attribute.
@@ -529,11 +617,16 @@ module DaytonaApiClient
           max_cpu_per_sandbox == o.max_cpu_per_sandbox &&
           max_memory_per_sandbox == o.max_memory_per_sandbox &&
           max_disk_per_sandbox == o.max_disk_per_sandbox &&
+          snapshot_deactivation_timeout_minutes == o.snapshot_deactivation_timeout_minutes &&
           sandbox_limited_network_egress == o.sandbox_limited_network_egress &&
           default_region_id == o.default_region_id &&
           authenticated_rate_limit == o.authenticated_rate_limit &&
           sandbox_create_rate_limit == o.sandbox_create_rate_limit &&
-          sandbox_lifecycle_rate_limit == o.sandbox_lifecycle_rate_limit
+          sandbox_lifecycle_rate_limit == o.sandbox_lifecycle_rate_limit &&
+          experimental_config == o.experimental_config &&
+          authenticated_rate_limit_ttl_seconds == o.authenticated_rate_limit_ttl_seconds &&
+          sandbox_create_rate_limit_ttl_seconds == o.sandbox_create_rate_limit_ttl_seconds &&
+          sandbox_lifecycle_rate_limit_ttl_seconds == o.sandbox_lifecycle_rate_limit_ttl_seconds
     end
 
     # @see the `==` method
@@ -545,7 +638,7 @@ module DaytonaApiClient
     # Calculates hash code according to all attributes.
     # @return [Integer] Hash code
     def hash
-      [id, name, created_by, personal, created_at, updated_at, suspended, suspended_at, suspension_reason, suspended_until, suspension_cleanup_grace_period_hours, max_cpu_per_sandbox, max_memory_per_sandbox, max_disk_per_sandbox, sandbox_limited_network_egress, default_region_id, authenticated_rate_limit, sandbox_create_rate_limit, sandbox_lifecycle_rate_limit].hash
+      [id, name, created_by, personal, created_at, updated_at, suspended, suspended_at, suspension_reason, suspended_until, suspension_cleanup_grace_period_hours, max_cpu_per_sandbox, max_memory_per_sandbox, max_disk_per_sandbox, snapshot_deactivation_timeout_minutes, sandbox_limited_network_egress, default_region_id, authenticated_rate_limit, sandbox_create_rate_limit, sandbox_lifecycle_rate_limit, experimental_config, authenticated_rate_limit_ttl_seconds, sandbox_create_rate_limit_ttl_seconds, sandbox_lifecycle_rate_limit_ttl_seconds].hash
     end
 
     # Builds the object from hash
@@ -659,5 +752,7 @@ module DaytonaApiClient
         value
       end
     end
+
   end
+
 end

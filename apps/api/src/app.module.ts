@@ -41,6 +41,8 @@ import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis'
 import { RegionModule } from './region/region.module'
 import { BodyParserErrorModule } from './common/modules/body-parser-error.module'
 import { AdminModule } from './admin/admin.module'
+import { ClickHouseModule } from './clickhouse/clickhouse.module'
+import { SandboxTelemetryModule } from './sandbox-telemetry/sandbox-telemetry.module'
 
 @Module({
   imports: [
@@ -76,7 +78,7 @@ import { AdminModule } from './admin/admin.module'
           password: configService.getOrThrow('database.password'),
           database: configService.getOrThrow('database.database'),
           autoLoadEntities: true,
-          migrations: [join(__dirname, 'migrations/**/*{.ts,.js}')],
+          migrations: [join(__dirname, 'migrations/**/*-migration.{ts,js}')],
           migrationsRun: configService.get('runMigrations') || !configService.getOrThrow('production'),
           namingStrategy: new CustomNamingStrategy(),
           manualInitialization: configService.get('skipConnections'),
@@ -85,16 +87,16 @@ import { AdminModule } from './admin/admin.module'
                 rejectUnauthorized: configService.get('database.tls.rejectUnauthorized'),
               }
             : undefined,
+          extra: {
+            max: configService.get('database.pool.max'),
+            min: configService.get('database.pool.min'),
+            idleTimeoutMillis: configService.get('database.pool.idleTimeoutMillis'),
+            connectionTimeoutMillis: configService.get('database.pool.connectionTimeoutMillis'),
+          },
           cache: {
             type: 'ioredis',
             ignoreErrors: true,
-            options: {
-              keyPrefix: 'typeorm:',
-              host: configService.get('redis.host'),
-              port: configService.get('redis.port'),
-              tls: configService.get('redis.tls'),
-              lazyConnect: configService.get('skipConnections'),
-            },
+            options: configService.getRedisConfig({ keyPrefix: 'typeorm:' }),
           },
           entitySkipConstructor: true,
         }
@@ -119,33 +121,18 @@ import { AdminModule } from './admin/admin.module'
     }),
     RedisModule.forRootAsync({
       inject: [TypedConfigService],
-      useFactory: (configService: TypedConfigService) => {
-        return {
-          type: 'single',
-          options: {
-            host: configService.getOrThrow('redis.host'),
-            port: configService.getOrThrow('redis.port'),
-            tls: configService.get('redis.tls'),
-            lazyConnect: configService.get('skipConnections'),
-          },
-        }
-      },
+      useFactory: (configService: TypedConfigService) => ({
+        type: 'single',
+        options: configService.getRedisConfig(),
+      }),
     }),
     RedisModule.forRootAsync(
       {
         inject: [TypedConfigService],
-        useFactory: (configService: TypedConfigService) => {
-          return {
-            type: 'single',
-            options: {
-              host: configService.getOrThrow('redis.host'),
-              port: configService.getOrThrow('redis.port'),
-              tls: configService.get('redis.tls'),
-              lazyConnect: configService.get('skipConnections'),
-              db: 1,
-            },
-          }
-        },
+        useFactory: (configService: TypedConfigService) => ({
+          type: 'single',
+          options: configService.getRedisConfig({ db: 1 }),
+        }),
       },
       'throttler',
     ),
@@ -206,6 +193,8 @@ import { AdminModule } from './admin/admin.module'
     ObjectStorageModule,
     AuditModule,
     HealthModule,
+    ClickHouseModule,
+    SandboxTelemetryModule,
     OpenFeatureModule.forRoot({
       contextFactory: (request: ExecutionContext) => {
         const req = request.switchToHttp().getRequest()

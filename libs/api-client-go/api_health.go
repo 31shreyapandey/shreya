@@ -19,26 +19,38 @@ import (
 	"net/url"
 )
 
+
 type HealthAPI interface {
 
 	/*
-		HealthControllerCheck Method for HealthControllerCheck
+	HealthControllerCheck Method for HealthControllerCheck
 
-		@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-		@return HealthAPIHealthControllerCheckRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return HealthAPIHealthControllerCheckRequest
 	*/
 	HealthControllerCheck(ctx context.Context) HealthAPIHealthControllerCheckRequest
 
 	// HealthControllerCheckExecute executes the request
 	//  @return HealthControllerCheck200Response
 	HealthControllerCheckExecute(r HealthAPIHealthControllerCheckRequest) (*HealthControllerCheck200Response, *http.Response, error)
+
+	/*
+	HealthControllerLive Method for HealthControllerLive
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return HealthAPIHealthControllerLiveRequest
+	*/
+	HealthControllerLive(ctx context.Context) HealthAPIHealthControllerLiveRequest
+
+	// HealthControllerLiveExecute executes the request
+	HealthControllerLiveExecute(r HealthAPIHealthControllerLiveRequest) (*http.Response, error)
 }
 
 // HealthAPIService HealthAPI service
 type HealthAPIService service
 
 type HealthAPIHealthControllerCheckRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService HealthAPI
 }
 
@@ -49,25 +61,24 @@ func (r HealthAPIHealthControllerCheckRequest) Execute() (*HealthControllerCheck
 /*
 HealthControllerCheck Method for HealthControllerCheck
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return HealthAPIHealthControllerCheckRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return HealthAPIHealthControllerCheckRequest
 */
 func (a *HealthAPIService) HealthControllerCheck(ctx context.Context) HealthAPIHealthControllerCheckRequest {
 	return HealthAPIHealthControllerCheckRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return HealthControllerCheck200Response
+//  @return HealthControllerCheck200Response
 func (a *HealthAPIService) HealthControllerCheckExecute(r HealthAPIHealthControllerCheckRequest) (*HealthControllerCheck200Response, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *HealthControllerCheck200Response
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *HealthControllerCheck200Response
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "HealthAPIService.HealthControllerCheck")
@@ -75,7 +86,7 @@ func (a *HealthAPIService) HealthControllerCheckExecute(r HealthAPIHealthControl
 		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
 	}
 
-	localVarPath := localBasePath + "/health"
+	localVarPath := localBasePath + "/health/ready"
 
 	localVarHeaderParams := make(map[string]string)
 	localVarQueryParams := url.Values{}
@@ -127,8 +138,8 @@ func (a *HealthAPIService) HealthControllerCheckExecute(r HealthAPIHealthControl
 				newErr.error = err.Error()
 				return localVarReturnValue, localVarHTTPResponse, newErr
 			}
-			newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
-			newErr.model = v
+					newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+					newErr.model = v
 		}
 		return localVarReturnValue, localVarHTTPResponse, newErr
 	}
@@ -143,4 +154,90 @@ func (a *HealthAPIService) HealthControllerCheckExecute(r HealthAPIHealthControl
 	}
 
 	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
+type HealthAPIHealthControllerLiveRequest struct {
+	ctx context.Context
+	ApiService HealthAPI
+}
+
+func (r HealthAPIHealthControllerLiveRequest) Execute() (*http.Response, error) {
+	return r.ApiService.HealthControllerLiveExecute(r)
+}
+
+/*
+HealthControllerLive Method for HealthControllerLive
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return HealthAPIHealthControllerLiveRequest
+*/
+func (a *HealthAPIService) HealthControllerLive(ctx context.Context) HealthAPIHealthControllerLiveRequest {
+	return HealthAPIHealthControllerLiveRequest{
+		ApiService: a,
+		ctx: ctx,
+	}
+}
+
+// Execute executes the request
+func (a *HealthAPIService) HealthControllerLiveExecute(r HealthAPIHealthControllerLiveRequest) (*http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "HealthAPIService.HealthControllerLive")
+	if err != nil {
+		return nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/health"
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		return localVarHTTPResponse, newErr
+	}
+
+	return localVarHTTPResponse, nil
 }

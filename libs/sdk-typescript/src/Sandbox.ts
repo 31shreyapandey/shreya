@@ -16,7 +16,9 @@ import {
   SshAccessDto,
   SshAccessValidationDto,
   SignedPortPreviewUrl,
+  ResizeSandbox,
 } from '@daytonaio/api-client'
+import { Resources } from './Daytona'
 import {
   FileSystemApi,
   GitApi,
@@ -34,8 +36,7 @@ import { DaytonaError, DaytonaNotFoundError } from './errors/DaytonaError'
 import { ComputerUse } from './ComputerUse'
 import { AxiosInstance } from 'axios'
 import { CodeInterpreter } from './CodeInterpreter'
-
-const TOOLBOX_URL_PLACEHOLDER = 'dtn-placeholder'
+import { WithInstrumentation } from './utils/otel.decorator'
 
 /**
  * Interface defining methods that a code toolbox must implement
@@ -118,6 +119,7 @@ export class Sandbox implements SandboxDto {
   public updatedAt?: string
   public networkBlockAll!: boolean
   public networkAllowList?: string
+  public toolboxProxyUrl: string
 
   private infoApi: InfoApi
 
@@ -135,42 +137,32 @@ export class Sandbox implements SandboxDto {
     private readonly axiosInstance: AxiosInstance,
     private readonly sandboxApi: SandboxApi,
     private readonly codeToolbox: SandboxCodeToolbox,
-    private readonly getToolboxBaseUrl: (sandboxId: string, regionId: string) => Promise<string>,
   ) {
     this.processSandboxDto(sandboxDto)
 
-    // Lazy load the base URL for the toolbox
-    this.axiosInstance.defaults.baseURL = TOOLBOX_URL_PLACEHOLDER
-    this.axiosInstance.interceptors.request.use(async (config) => {
-      if (this.axiosInstance.defaults.baseURL === TOOLBOX_URL_PLACEHOLDER) {
-        await this.ensureToolboxUrl()
-
-        config.baseURL = this.axiosInstance.defaults.baseURL
-      }
-      return config
-    })
+    // Set the toolbox base URL
+    let baseUrl = this.toolboxProxyUrl
+    if (!baseUrl.endsWith('/')) {
+      baseUrl += '/'
+    }
+    this.axiosInstance.defaults.baseURL = baseUrl + this.id
+    this.clientConfig.basePath = this.axiosInstance.defaults.baseURL
 
     // Initialize Services
     const getPreviewToken = async () => (await this.getPreviewLink(1)).token
 
-    this.fs = new FileSystem(
-      this.clientConfig,
-      new FileSystemApi(this.clientConfig, '', this.axiosInstance),
-      this.ensureToolboxUrl.bind(this),
-    )
+    this.fs = new FileSystem(this.clientConfig, new FileSystemApi(this.clientConfig, '', this.axiosInstance))
     this.git = new Git(new GitApi(this.clientConfig, '', this.axiosInstance))
     this.process = new Process(
       this.clientConfig,
       this.codeToolbox,
       new ProcessApi(this.clientConfig, '', this.axiosInstance),
       getPreviewToken,
-      this.ensureToolboxUrl.bind(this),
     )
     this.codeInterpreter = new CodeInterpreter(
       this.clientConfig,
       new InterpreterApi(this.clientConfig, '', this.axiosInstance),
       getPreviewToken,
-      this.ensureToolboxUrl.bind(this),
     )
     this.computerUse = new ComputerUse(new ComputerUseApi(this.clientConfig, '', this.axiosInstance))
     this.infoApi = new InfoApi(this.clientConfig, '', this.axiosInstance)
@@ -185,6 +177,7 @@ export class Sandbox implements SandboxDto {
    * const userHomeDir = await sandbox.getUserHomeDir();
    * console.log(`Sandbox user home: ${userHomeDir}`);
    */
+  @WithInstrumentation()
   public async getUserHomeDir(): Promise<string | undefined> {
     const response = await this.infoApi.getUserHomeDir()
     return response.data.dir
@@ -193,6 +186,7 @@ export class Sandbox implements SandboxDto {
   /**
    * @deprecated Use `getUserHomeDir` instead. This method will be removed in a future version.
    */
+  @WithInstrumentation()
   public async getUserRootDir(): Promise<string | undefined> {
     return this.getUserHomeDir()
   }
@@ -207,6 +201,7 @@ export class Sandbox implements SandboxDto {
    * const workDir = await sandbox.getWorkDir();
    * console.log(`Sandbox working directory: ${workDir}`);
    */
+  @WithInstrumentation()
   public async getWorkDir(): Promise<string | undefined> {
     const response = await this.infoApi.getWorkDir()
     return response.data.dir
@@ -225,6 +220,7 @@ export class Sandbox implements SandboxDto {
    * @example
    * const lsp = await sandbox.createLspServer('typescript', 'workspace/project');
    */
+  @WithInstrumentation()
   public async createLspServer(languageId: LspLanguageId | string, pathToProject: string): Promise<LspServer> {
     return new LspServer(
       languageId as LspLanguageId,
@@ -249,6 +245,7 @@ export class Sandbox implements SandboxDto {
    *   team: 'backend'
    * });
    */
+  @WithInstrumentation()
   public async setLabels(labels: Record<string, string>): Promise<Record<string, string>> {
     this.labels = (await this.sandboxApi.replaceLabels(this.id, { labels })).data.labels
     return this.labels
@@ -269,6 +266,7 @@ export class Sandbox implements SandboxDto {
    * await sandbox.start(40);  // Wait up to 40 seconds
    * console.log('Sandbox started successfully');
    */
+  @WithInstrumentation()
   public async start(timeout = 60): Promise<void> {
     if (timeout < 0) {
       throw new DaytonaError('Timeout must be a non-negative number')
@@ -320,6 +318,7 @@ export class Sandbox implements SandboxDto {
    * await sandbox.stop();
    * console.log('Sandbox stopped successfully');
    */
+  @WithInstrumentation()
   public async stop(timeout = 60): Promise<void> {
     if (timeout < 0) {
       throw new DaytonaError('Timeout must be a non-negative number')
@@ -335,6 +334,7 @@ export class Sandbox implements SandboxDto {
    * Deletes the Sandbox.
    * @returns {Promise<void>}
    */
+  @WithInstrumentation()
   public async delete(timeout = 60): Promise<void> {
     await this.sandboxApi.deleteSandbox(this.id, undefined, { timeout: timeout * 1000 })
     this.refreshDataSafe()
@@ -351,6 +351,7 @@ export class Sandbox implements SandboxDto {
    * @returns {Promise<void>}
    * @throws {DaytonaError} - `DaytonaError` - If the sandbox ends up in an error state or fails to start within the timeout period.
    */
+  @WithInstrumentation()
   public async waitUntilStarted(timeout = 60) {
     if (timeout < 0) {
       throw new DaytonaError('Timeout must be a non-negative number')
@@ -391,6 +392,7 @@ export class Sandbox implements SandboxDto {
    * @returns {Promise<void>}
    * @throws {DaytonaError} - `DaytonaError` - If the sandbox fails to stop within the timeout period.
    */
+  @WithInstrumentation()
   public async waitUntilStopped(timeout = 60) {
     if (timeout < 0) {
       throw new DaytonaError('Timeout must be a non-negative number')
@@ -432,6 +434,7 @@ export class Sandbox implements SandboxDto {
    * console.log(`State: ${sandbox.state}`);
    * console.log(`Resources: ${sandbox.cpu} CPU, ${sandbox.memory} GiB RAM`);
    */
+  @WithInstrumentation()
   public async refreshData(): Promise<void> {
     const response = await this.sandboxApi.getSandbox(this.id)
     this.processSandboxDto(response.data)
@@ -471,6 +474,7 @@ export class Sandbox implements SandboxDto {
    * // Or disable auto-stop
    * await sandbox.setAutostopInterval(0);
    */
+  @WithInstrumentation()
   public async setAutostopInterval(interval: number): Promise<void> {
     if (!Number.isInteger(interval) || interval < 0) {
       throw new DaytonaError('autoStopInterval must be a non-negative integer')
@@ -496,6 +500,7 @@ export class Sandbox implements SandboxDto {
    * // Or use the maximum interval
    * await sandbox.setAutoArchiveInterval(0);
    */
+  @WithInstrumentation()
   public async setAutoArchiveInterval(interval: number): Promise<void> {
     if (!Number.isInteger(interval) || interval < 0) {
       throw new DaytonaError('autoArchiveInterval must be a non-negative integer')
@@ -522,6 +527,7 @@ export class Sandbox implements SandboxDto {
    * // Or disable auto-delete
    * await sandbox.setAutoDeleteInterval(-1);
    */
+  @WithInstrumentation()
   public async setAutoDeleteInterval(interval: number): Promise<void> {
     await this.sandboxApi.setAutoDeleteInterval(this.id, interval)
     this.autoDeleteInterval = interval
@@ -541,6 +547,7 @@ export class Sandbox implements SandboxDto {
    * console.log(`Preview URL: ${previewLink.url}`);
    * console.log(`Token: ${previewLink.token}`);
    */
+  @WithInstrumentation()
   public async getPreviewLink(port: number): Promise<PortPreviewUrl> {
     return (await this.sandboxApi.getPortPreviewUrl(this.id, port)).data
   }
@@ -573,9 +580,93 @@ export class Sandbox implements SandboxDto {
    * The tradeoff between archived and stopped states is that starting an archived sandbox takes more time, depending on its size.
    * Sandbox must be stopped before archiving.
    */
+  @WithInstrumentation()
   public async archive(): Promise<void> {
     await this.sandboxApi.archiveSandbox(this.id)
     await this.refreshData()
+  }
+
+  /**
+   * Resizes the Sandbox resources.
+   *
+   * Changes the CPU, memory, or disk allocation for the Sandbox. Hot resize (on running
+   * sandbox) only allows CPU/memory increases. Disk resize requires a stopped sandbox.
+   *
+   * @param {Resources} resources - New resource configuration. Only specified fields will be updated.
+   *   - cpu: Number of CPU cores (minimum: 1). For hot resize, can only be increased.
+   *   - memory: Memory in GiB (minimum: 1). For hot resize, can only be increased.
+   *   - disk: Disk space in GiB (can only be increased, requires stopped sandbox).
+   * @param {number} [timeout=60] - Timeout in seconds for the resize operation. 0 means no timeout.
+   * @returns {Promise<void>}
+   * @throws {DaytonaError} - If hot resize constraints are violated, disk resize attempted on running sandbox,
+   *   disk size decrease is attempted, no resource changes are specified, or resize operation times out.
+   *
+   * @example
+   * // Increase CPU/memory on running sandbox (hot resize)
+   * await sandbox.resize({ cpu: 4, memory: 8 });
+   *
+   * // Change disk (sandbox must be stopped)
+   * await sandbox.stop();
+   * await sandbox.resize({ cpu: 2, memory: 4, disk: 30 });
+   */
+  @WithInstrumentation()
+  public async resize(resources: Resources, timeout = 60): Promise<void> {
+    if (timeout < 0) {
+      throw new DaytonaError('Timeout must be a non-negative number')
+    }
+
+    const startTime = Date.now()
+    const resizeRequest: ResizeSandbox = {
+      cpu: resources.cpu,
+      memory: resources.memory,
+      disk: resources.disk,
+    }
+    const response = await this.sandboxApi.resizeSandbox(this.id, resizeRequest, this.organizationId, {
+      timeout: timeout * 1000,
+    })
+    this.processSandboxDto(response.data)
+    const timeElapsed = Date.now() - startTime
+    await this.waitForResizeComplete(timeout ? Math.max(0.001, timeout - timeElapsed / 1000) : timeout)
+  }
+
+  /**
+   * Waits for the Sandbox resize operation to complete.
+   *
+   * This method polls the Sandbox status until the state is no longer 'resizing'.
+   *
+   * @param {number} [timeout=60] - Maximum time to wait in seconds. 0 means no timeout.
+   * @returns {Promise<void>}
+   * @throws {DaytonaError} - If the sandbox ends up in an error state or resize times out.
+   */
+  @WithInstrumentation()
+  public async waitForResizeComplete(timeout = 60): Promise<void> {
+    if (timeout < 0) {
+      throw new DaytonaError('Timeout must be a non-negative number')
+    }
+
+    const checkInterval = 100 // Wait 100 ms between checks
+    const startTime = Date.now()
+
+    while (this.state === SandboxState.RESIZING) {
+      await this.refreshData()
+
+      // @ts-expect-error this.refreshData() can modify this.state so this check is fine
+      if (this.state === SandboxState.ERROR || this.state === SandboxState.BUILD_FAILED) {
+        throw new DaytonaError(
+          `Sandbox ${this.id} resize failed with state: ${this.state}, error reason: ${this.errorReason}`,
+        )
+      }
+
+      if (this.state !== SandboxState.RESIZING) {
+        return
+      }
+
+      if (timeout !== 0 && Date.now() - startTime > timeout * 1000) {
+        throw new DaytonaError('Sandbox resize did not complete within the timeout period')
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, checkInterval))
+    }
   }
 
   /**
@@ -584,6 +675,7 @@ export class Sandbox implements SandboxDto {
    * @param {number} expiresInMinutes - The number of minutes the SSH access token will be valid for.
    * @returns {Promise<SshAccessDto>} The SSH access token.
    */
+  @WithInstrumentation()
   public async createSshAccess(expiresInMinutes?: number): Promise<SshAccessDto> {
     return (await this.sandboxApi.createSshAccess(this.id, undefined, expiresInMinutes)).data
   }
@@ -594,6 +686,7 @@ export class Sandbox implements SandboxDto {
    * @param {string} token - The token to revoke.
    * @returns {Promise<void>}
    */
+  @WithInstrumentation()
   public async revokeSshAccess(token: string): Promise<void> {
     await this.sandboxApi.revokeSshAccess(this.id, undefined, token)
   }
@@ -604,6 +697,7 @@ export class Sandbox implements SandboxDto {
    * @param {string} token - The token to validate.
    * @returns {Promise<SshAccessValidationDto>} The SSH access validation result.
    */
+  @WithInstrumentation()
   public async validateSshAccess(token: string): Promise<SshAccessValidationDto> {
     return (await this.sandboxApi.validateSshAccess(token)).data
   }
@@ -642,6 +736,7 @@ export class Sandbox implements SandboxDto {
     this.updatedAt = sandboxDto.updatedAt
     this.networkBlockAll = sandboxDto.networkBlockAll
     this.networkAllowList = sandboxDto.networkAllowList
+    this.toolboxProxyUrl = sandboxDto.toolboxProxyUrl
   }
 
   /**
@@ -658,18 +753,6 @@ export class Sandbox implements SandboxDto {
         this.state = SandboxState.DESTROYED
       }
     }
-  }
-
-  private async ensureToolboxUrl(): Promise<void> {
-    if (this.axiosInstance.defaults.baseURL !== TOOLBOX_URL_PLACEHOLDER) {
-      return
-    }
-    this.axiosInstance.defaults.baseURL = await this.getToolboxBaseUrl(this.id, this.target)
-    if (!this.axiosInstance.defaults.baseURL.endsWith('/')) {
-      this.axiosInstance.defaults.baseURL += '/'
-    }
-    this.axiosInstance.defaults.baseURL += this.id
-    this.clientConfig.basePath = this.axiosInstance.defaults.baseURL
   }
 }
 

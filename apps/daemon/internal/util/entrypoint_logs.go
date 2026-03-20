@@ -4,27 +4,49 @@
 package util
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"io"
 	"os"
+
+	"github.com/daytonaio/common-go/pkg/log"
 )
 
-func ReadEntrypointLogs(entrypointLogFilePath string) {
+func ReadEntrypointLogs(entrypointLogFilePath string) error {
 	if entrypointLogFilePath == "" {
-		fmt.Fprintln(os.Stderr, "Error: Entrypoint log file path is not configured")
-		os.Exit(1)
+		return errors.New("entrypoint log file path is not configured")
 	}
 
 	logFile, err := os.Open(entrypointLogFilePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: Failed to open entrypoint log file at %s: %v\n", entrypointLogFilePath, err)
-		os.Exit(1)
+		return fmt.Errorf("failed to open entrypoint log file at %s: %w", entrypointLogFilePath, err)
 	}
 	defer logFile.Close()
 
-	_, err = io.Copy(os.Stdout, logFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: Failed to read entrypoint log file: %v\n", err)
-		os.Exit(1)
+	errChan := make(chan error, 1)
+	stdoutChan := make(chan []byte)
+	stderrChan := make(chan []byte)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go log.ReadMultiplexedLog(ctx, logFile, true, stdoutChan, stderrChan, errChan)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case line := <-stdoutChan:
+			_, err := os.Stdout.Write(line)
+			if err != nil {
+				return fmt.Errorf("failed to write entrypoint log line to stdout: %w", err)
+			}
+		case line := <-stderrChan:
+			_, err := os.Stderr.Write(line)
+			if err != nil {
+				return fmt.Errorf("failed to write entrypoint log line to stderr: %w", err)
+			}
+		case err := <-errChan:
+			if err != nil {
+				return err
+			}
+		}
 	}
 }

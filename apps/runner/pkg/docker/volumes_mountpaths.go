@@ -16,10 +16,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/daytonaio/common-go/pkg/log"
 	"github.com/daytonaio/runner/cmd/runner/config"
-	"github.com/daytonaio/runner/internal/util"
 	"github.com/daytonaio/runner/pkg/api/dto"
-	log "github.com/sirupsen/logrus"
 )
 
 const volumeMountPrefix = "daytona-volume-"
@@ -60,31 +59,48 @@ func (d *DockerClient) getVolumesMountPathBinds(ctx context.Context, volumes []d
 		}
 
 		if d.isDirectoryMounted(runnerVolumeMountPath) {
-			log.Infof("volume %s (subpath: %s) is already mounted to %s", volumeIdPrefixed, subpathStr, runnerVolumeMountPath)
+			d.logger.InfoContext(ctx, "volume is already mounted", "volumeId", volumeIdPrefixed, "subpath", subpathStr, "runnerVolumeMountPath", runnerVolumeMountPath)
 			volumeMountPathBinds = append(volumeMountPathBinds, fmt.Sprintf("%s/:%s/", runnerVolumeMountPath, vol.MountPath))
 			continue
 		}
+
+		// Track if directory existed before we create it
+		_, statErr := os.Stat(runnerVolumeMountPath)
+		dirExisted := statErr == nil
 
 		err := os.MkdirAll(runnerVolumeMountPath, 0755)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create mount directory %s: %s", runnerVolumeMountPath, err)
 		}
 
-		log.Infof("mounting S3 volume %s (subpath: %s) to %s", volumeIdPrefixed, subpathStr, runnerVolumeMountPath)
+		d.logger.InfoContext(ctx, "mounting S3 volume", "volumeId", volumeIdPrefixed, "subpath", subpathStr, "runnerVolumeMountPath", runnerVolumeMountPath)
 
 		cmd := d.getMountCmd(ctx, volumeIdPrefixed, vol.Subpath, runnerVolumeMountPath)
 		err = cmd.Run()
 		if err != nil {
+			if !dirExisted {
+				os.Remove(runnerVolumeMountPath)
+			}
 			return nil, fmt.Errorf("failed to mount S3 volume %s (subpath: %s) to %s: %s", volumeIdPrefixed, subpathStr, runnerVolumeMountPath, err)
 		}
 
 		// Wait for FUSE mount to be fully ready before proceeding
 		err = d.waitForMountReady(ctx, runnerVolumeMountPath)
 		if err != nil {
+			if !dirExisted {
+				umountErr := exec.Command("umount", runnerVolumeMountPath).Run()
+				if umountErr != nil {
+					d.logger.WarnContext(ctx, "Failed to unmount directory during cleanup", "path", runnerVolumeMountPath, "error", umountErr)
+				}
+				removeErr := os.Remove(runnerVolumeMountPath)
+				if removeErr != nil {
+					d.logger.WarnContext(ctx, "Failed to remove mount directory during cleanup", "path", runnerVolumeMountPath, "error", removeErr)
+				}
+			}
 			return nil, fmt.Errorf("mount %s not ready after mounting: %s", runnerVolumeMountPath, err)
 		}
 
-		log.Infof("mounted S3 volume %s (subpath: %s) to %s", volumeIdPrefixed, subpathStr, runnerVolumeMountPath)
+		d.logger.InfoContext(ctx, "mounted S3 volume", "volumeId", volumeIdPrefixed, "subpath", subpathStr, "runnerVolumeMountPath", runnerVolumeMountPath)
 
 		volumeMountPathBinds = append(volumeMountPathBinds, fmt.Sprintf("%s/:%s/", runnerVolumeMountPath, vol.MountPath))
 	}
@@ -141,7 +157,7 @@ func (d *DockerClient) waitForMountReady(ctx context.Context, path string) error
 			// Try to read directory to ensure it's fully operational
 			_, err = os.ReadDir(path)
 			if err == nil {
-				log.Infof("mount %s is ready after %d attempts", path, i+1)
+				d.logger.InfoContext(ctx, "mount is ready", "path", path, "attempts", i+1)
 				return nil
 			}
 		}
@@ -172,26 +188,38 @@ func (d *DockerClient) getMountCmd(ctx context.Context, volume string, subpath *
 
 	args = append(args, volume, path)
 
-	cmd := exec.CommandContext(ctx, "mount-s3", args...)
-
+	var envVars []string
 	if d.awsEndpointUrl != "" {
-		cmd.Env = append(cmd.Env, "AWS_ENDPOINT_URL="+d.awsEndpointUrl)
+		envVars = append(envVars, "AWS_ENDPOINT_URL="+d.awsEndpointUrl)
 	}
-
 	if d.awsAccessKeyId != "" {
-		cmd.Env = append(cmd.Env, "AWS_ACCESS_KEY_ID="+d.awsAccessKeyId)
+		envVars = append(envVars, "AWS_ACCESS_KEY_ID="+d.awsAccessKeyId)
 	}
-
 	if d.awsSecretAccessKey != "" {
-		cmd.Env = append(cmd.Env, "AWS_SECRET_ACCESS_KEY="+d.awsSecretAccessKey)
+		envVars = append(envVars, "AWS_SECRET_ACCESS_KEY="+d.awsSecretAccessKey)
 	}
-
 	if d.awsRegion != "" {
-		cmd.Env = append(cmd.Env, "AWS_REGION="+d.awsRegion)
+		envVars = append(envVars, "AWS_REGION="+d.awsRegion)
 	}
 
-	cmd.Stderr = io.Writer(&util.ErrorLogWriter{})
-	cmd.Stdout = io.Writer(&util.InfoLogWriter{})
+	// No systemd (containerized) — daemon orphan survives runner restarts naturally.
+	cmd := exec.Command("mount-s3", args...)
+	cmd.Env = envVars
+
+	_, err := os.Stat("/run/systemd/system")
+	if err == nil {
+		// Isolate mount-s3 in its own cgroup so the FUSE daemon survives runner restarts.
+		sdArgs := []string{"--scope"}
+		for _, env := range envVars {
+			sdArgs = append(sdArgs, "--setenv="+env)
+		}
+		sdArgs = append(sdArgs, "--", "mount-s3")
+		sdArgs = append(sdArgs, args...)
+		cmd = exec.CommandContext(ctx, "systemd-run", sdArgs...)
+	}
+
+	cmd.Stderr = io.Writer(&log.ErrorLogWriter{})
+	cmd.Stdout = io.Writer(&log.InfoLogWriter{})
 
 	return cmd
 }

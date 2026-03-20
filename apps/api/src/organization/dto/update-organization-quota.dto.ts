@@ -33,4 +33,16 @@ export class UpdateOrganizationQuotaDto {
 
   @ApiProperty({ nullable: true })
   sandboxLifecycleRateLimit?: number
+
+  @ApiProperty({ nullable: true })
+  authenticatedRateLimitTtlSeconds?: number
+
+  @ApiProperty({ nullable: true })
+  sandboxCreateRateLimitTtlSeconds?: number
+
+  @ApiProperty({ nullable: true })
+  sandboxLifecycleRateLimitTtlSeconds?: number
+
+  @ApiProperty({ nullable: true, description: 'Time in minutes before an unused snapshot is deactivated' })
+  snapshotDeactivationTimeoutMinutes?: number
 }

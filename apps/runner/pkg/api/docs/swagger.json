@@ -154,60 +154,6 @@
             }
           }
         }
-      },
-      "delete": {
-        "description": "Remove a sandbox that has been previously destroyed",
-        "produces": ["application/json"],
-        "tags": ["sandbox"],
-        "summary": "Remove a destroyed sandbox",
-        "operationId": "RemoveDestroyed",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Sandbox ID",
-            "name": "sandboxId",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Sandbox removed",
-            "schema": {
-              "type": "string"
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/ErrorResponse"
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "schema": {
-              "$ref": "#/definitions/ErrorResponse"
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "schema": {
-              "$ref": "#/definitions/ErrorResponse"
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "schema": {
-              "$ref": "#/definitions/ErrorResponse"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/ErrorResponse"
-            }
-          }
-        }
       }
     },
     "/sandboxes/{sandboxId}/backup": {
@@ -626,7 +572,7 @@
     "/sandboxes/{sandboxId}/start": {
       "post": {
         "description": "Start sandbox",
-        "produces": ["application/json", "application/json"],
+        "produces": ["application/json"],
         "tags": ["sandbox"],
         "summary": "Start sandbox",
         "operationId": "Start",
@@ -645,6 +591,12 @@
             "schema": {
               "type": "object"
             }
+          },
+          {
+            "type": "string",
+            "description": "Auth token",
+            "name": "token",
+            "in": "query"
           }
         ],
         "responses": {
@@ -918,7 +870,7 @@
     },
     "/snapshots/build": {
       "post": {
-        "description": "Build a snapshot from a Dockerfile and context hashes",
+        "description": "Build a snapshot from a Dockerfile and context hashes. The operation runs asynchronously and returns 202 immediately.",
         "tags": ["snapshots"],
         "summary": "Build a snapshot",
         "operationId": "BuildSnapshot",
@@ -934,8 +886,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Snapshot successfully built",
+          "202": {
+            "description": "Snapshot build started",
             "schema": {
               "type": "string"
             }
@@ -1031,7 +983,7 @@
     },
     "/snapshots/info": {
       "get": {
-        "description": "Get information about a specified snapshot including size and entrypoint",
+        "description": "Get information about a specified snapshot including size and entrypoint. Returns 422 if the last pull/build operation failed, with the error reason in the message.",
         "produces": ["application/json"],
         "tags": ["snapshots"],
         "summary": "Get snapshot information",
@@ -1066,6 +1018,12 @@
           },
           "404": {
             "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
             "schema": {
               "$ref": "#/definitions/ErrorResponse"
             }
@@ -1188,7 +1146,7 @@
     },
     "/snapshots/pull": {
       "post": {
-        "description": "Pull a snapshot from a registry and optionally push to another registry",
+        "description": "Pull a snapshot from a registry and optionally push to another registry. The operation runs asynchronously and returns 202 immediately.",
         "tags": ["snapshots"],
         "summary": "Pull a snapshot",
         "operationId": "PullSnapshot",
@@ -1204,8 +1162,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Snapshot successfully pulled",
+          "202": {
+            "description": "Snapshot pull started",
             "schema": {
               "type": "string"
             }
@@ -1409,6 +1367,9 @@
       "type": "object",
       "required": ["id", "osUser", "snapshot", "userId"],
       "properties": {
+        "authToken": {
+          "type": "string"
+        },
         "cpuQuota": {
           "type": "integer",
           "minimum": 1
@@ -1451,11 +1412,24 @@
         "networkBlockAll": {
           "type": "boolean"
         },
+        "organizationId": {
+          "description": "Nullable for backward compatibility",
+          "type": "string"
+        },
         "osUser": {
+          "type": "string"
+        },
+        "otelEndpoint": {
+          "type": "string"
+        },
+        "regionId": {
           "type": "string"
         },
         "registry": {
           "$ref": "#/definitions/RegistryDTO"
+        },
+        "skipStart": {
+          "type": "boolean"
         },
         "snapshot": {
           "type": "string"
@@ -1478,7 +1452,7 @@
     "ErrorResponse": {
       "description": "Error response",
       "type": "object",
-      "required": ["code", "message", "method", "path", "statusCode", "timestamp"],
+      "required": ["message", "path", "statusCode", "timestamp"],
       "properties": {
         "code": {
           "type": "string",
@@ -1559,7 +1533,7 @@
     },
     "RecoverSandboxDTO": {
       "type": "object",
-      "required": ["errorReason", "osUser", "snapshot", "userId"],
+      "required": ["errorReason", "osUser", "userId"],
       "properties": {
         "backupErrorReason": {
           "type": "string"
@@ -1640,6 +1614,10 @@
           "type": "integer",
           "minimum": 1
         },
+        "disk": {
+          "type": "integer",
+          "minimum": 1
+        },
         "gpu": {
           "type": "integer",
           "minimum": 0
@@ -1658,6 +1636,12 @@
         },
         "metrics": {
           "$ref": "#/definitions/RunnerMetrics"
+        },
+        "serviceHealth": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RunnerServiceInfo"
+          }
         }
       }
     },
@@ -1665,13 +1649,13 @@
       "type": "object",
       "properties": {
         "currentAllocatedCpu": {
-          "type": "integer"
+          "type": "number"
         },
         "currentAllocatedDiskGiB": {
-          "type": "integer"
+          "type": "number"
         },
         "currentAllocatedMemoryGiB": {
-          "type": "integer"
+          "type": "number"
         },
         "currentCpuLoadAverage": {
           "type": "number"
@@ -1690,6 +1674,21 @@
         },
         "currentStartedSandboxes": {
           "type": "integer"
+        }
+      }
+    },
+    "RunnerServiceInfo": {
+      "type": "object",
+      "required": ["healthy", "serviceName"],
+      "properties": {
+        "errorReason": {
+          "type": "string"
+        },
+        "healthy": {
+          "type": "boolean"
+        },
+        "serviceName": {
+          "type": "string"
         }
       }
     },

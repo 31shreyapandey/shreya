@@ -5,6 +5,7 @@ package errors
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -16,16 +17,25 @@ import (
 type ErrorResponse struct {
 	StatusCode int       `json:"statusCode" example:"400" binding:"required"`
 	Message    string    `json:"message" example:"Bad request" binding:"required"`
-	Code       string    `json:"code" example:"BAD_REQUEST" binding:"required"`
+	Code       string    `json:"code,omitempty" example:"BAD_REQUEST"`
 	Timestamp  time.Time `json:"timestamp" example:"2023-01-01T12:00:00Z" binding:"required"`
 	Path       string    `json:"path" example:"/api/resource" binding:"required"`
-	Method     string    `json:"method" example:"GET" binding:"required"`
+	Method     string    `json:"method,omitempty" example:"GET"`
 } //	@name	ErrorResponse
 
 type CustomError struct {
 	StatusCode int
 	Message    string
 	Code       string
+}
+
+func (e *CustomError) IsRetryable() bool {
+	switch e.StatusCode {
+	case http.StatusBadGateway, http.StatusGatewayTimeout:
+		return true
+	}
+
+	return false
 }
 
 func (e *CustomError) Error() string {
@@ -164,4 +174,54 @@ func NewRequestTimeoutError(err error) error {
 
 func IsRequestTimeoutError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "request timeout")
+}
+
+type GoneError struct {
+	Message string
+}
+
+func (e *GoneError) Error() string {
+	return e.Message
+}
+
+func NewGoneError(err error) error {
+	return &GoneError{
+		Message: fmt.Sprintf("gone: %s", err.Error()),
+	}
+}
+
+func IsGoneError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "gone")
+}
+
+type InternalServerError struct {
+	Message string
+}
+
+func (e *InternalServerError) Error() string {
+	return e.Message
+}
+
+func NewInternalServerError(err error) error {
+	return &InternalServerError{
+		Message: fmt.Sprintf("internal server error: %s", err.Error()),
+	}
+}
+
+func IsInternalServerError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "internal server error")
+}
+
+type UnprocessableEntityError struct {
+	Message string
+}
+
+func (e *UnprocessableEntityError) Error() string {
+	return e.Message
+}
+
+func NewUnprocessableEntityError(err error) error {
+	return &UnprocessableEntityError{
+		Message: fmt.Sprintf("unprocessable entity: %s", err.Error()),
+	}
 }

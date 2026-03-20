@@ -1,3 +1,4 @@
+.claude
 .devcontainer
 .github
 .husky
@@ -14,8 +15,15 @@ dist
 !dist/apps/snapshot-manager
 docker
 .tmp
-libs/sdk-python
-libs/sdk-typescript
-libs/api-client-python
-libs/api-client-python-async
+libs
+!libs/sdk-typescript
+!libs/computer-use
+!libs/common-go
+!libs/api-client
+!libs/analytics-api-client
+!libs/runner-api-client
+!libs/api-client-go
+!libs/toolbox-api-client-go
+!libs/toolbox-api-client
+!libs/sdk-go
 Dockerfile

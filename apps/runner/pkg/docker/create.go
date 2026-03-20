@@ -5,19 +5,20 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
 	"github.com/containerd/errdefs"
 	"github.com/daytonaio/common-go/pkg/timer"
-	"github.com/daytonaio/runner/internal/constants"
 	"github.com/daytonaio/runner/pkg/api/dto"
 	"github.com/daytonaio/runner/pkg/common"
 	"github.com/daytonaio/runner/pkg/models/enums"
+	"github.com/docker/docker/api/types/image"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-
-	log "github.com/sirupsen/logrus"
 
 	common_errors "github.com/daytonaio/common-go/pkg/errors"
 )
@@ -33,13 +34,23 @@ func (d *DockerClient) Create(ctx context.Context, sandboxDto dto.CreateSandboxD
 		}
 	}()
 
-	state, err := d.DeduceSandboxState(ctx, sandboxDto.Id)
+	state, err := d.GetSandboxState(ctx, sandboxDto.Id)
 	if err != nil && state == enums.SandboxStateError {
 		return "", "", err
 	}
 
 	if state == enums.SandboxStateStarted || state == enums.SandboxStatePullingSnapshot || state == enums.SandboxStateStarting {
-		daemonVersion, err := d.GetDaemonVersion(ctx, sandboxDto.Id)
+		c, err := d.ContainerInspect(ctx, sandboxDto.Id)
+		if err != nil {
+			return "", "", err
+		}
+
+		containerIP := common.GetContainerIpAddress(ctx, c)
+		if containerIP == "" {
+			return "", "", errors.New("sandbox IP not found? Is the sandbox started?")
+		}
+
+		daemonVersion, err := d.waitForDaemonRunning(ctx, containerIP, sandboxDto.AuthToken)
 		if err != nil {
 			return "", "", err
 		}
@@ -48,7 +59,17 @@ func (d *DockerClient) Create(ctx context.Context, sandboxDto dto.CreateSandboxD
 	}
 
 	if state == enums.SandboxStateStopped || state == enums.SandboxStateCreating {
-		daemonVersion, err := d.Start(ctx, sandboxDto.Id, sandboxDto.Metadata)
+		metadata := maps.Clone(sandboxDto.Metadata)
+		if len(sandboxDto.Volumes) > 0 {
+			if metadata == nil {
+				metadata = make(map[string]string)
+			}
+			volumesJSON, err := json.Marshal(sandboxDto.Volumes)
+			if err == nil {
+				metadata["volumes"] = string(volumesJSON)
+			}
+		}
+		_, daemonVersion, err := d.Start(ctx, sandboxDto.Id, sandboxDto.AuthToken, metadata)
 		if err != nil {
 			return "", "", err
 		}
@@ -56,19 +77,14 @@ func (d *DockerClient) Create(ctx context.Context, sandboxDto dto.CreateSandboxD
 		return sandboxDto.Id, daemonVersion, nil
 	}
 
-	d.statesCache.SetSandboxState(ctx, sandboxDto.Id, enums.SandboxStateCreating)
-
-	ctx = context.WithValue(ctx, constants.ID_KEY, sandboxDto.Id)
-	err = d.PullImage(ctx, sandboxDto.Snapshot, sandboxDto.Registry)
+	image, err := d.PullImage(ctx, sandboxDto.Snapshot, sandboxDto.Registry)
 	if err != nil {
 		return "", "", err
 	}
 
-	d.statesCache.SetSandboxState(ctx, sandboxDto.Id, enums.SandboxStateCreating)
-
-	err = d.validateImageArchitecture(ctx, sandboxDto.Snapshot)
+	err = d.validateImageArchitecture(image)
 	if err != nil {
-		log.Errorf("ERROR: %s.\n", err.Error())
+		d.logger.ErrorContext(ctx, "Failed to validate image architecture", "error", err)
 		return "", "", err
 	}
 
@@ -80,7 +96,7 @@ func (d *DockerClient) Create(ctx context.Context, sandboxDto dto.CreateSandboxD
 		}
 	}
 
-	containerConfig, hostConfig, networkingConfig, err := d.getContainerConfigs(ctx, sandboxDto, volumeMountPathBinds)
+	containerConfig, hostConfig, networkingConfig, err := d.getContainerConfigs(sandboxDto, image, volumeMountPathBinds)
 	if err != nil {
 		return "", "", err
 	}
@@ -97,30 +113,31 @@ func (d *DockerClient) Create(ctx context.Context, sandboxDto dto.CreateSandboxD
 		return "", "", err
 	}
 
-	daemonVersion, err := d.Start(ctx, sandboxDto.Id, sandboxDto.Metadata)
+	// Skip starting the container if explicitly requested
+	if sandboxDto.SkipStart != nil && *sandboxDto.SkipStart {
+		return c.ID, "", nil
+	}
+
+	runningContainer, daemonVersion, err := d.Start(ctx, sandboxDto.Id, sandboxDto.AuthToken, sandboxDto.Metadata)
 	if err != nil {
 		return "", "", err
 	}
 
-	containerShortId := c.ID[:12]
-	info, err := d.apiClient.ContainerInspect(context.Background(), sandboxDto.Id)
-	if err != nil {
-		log.Errorf("Failed to inspect container: %v", err)
-	}
-	ip := common.GetContainerIpAddress(ctx, info)
+	containerShortId := runningContainer.ID[:12]
 
+	ip := common.GetContainerIpAddress(ctx, runningContainer)
 	if sandboxDto.NetworkBlockAll != nil && *sandboxDto.NetworkBlockAll {
 		go func() {
 			err = d.netRulesManager.SetNetworkRules(containerShortId, ip, "")
 			if err != nil {
-				log.Errorf("Failed to update sandbox network settings: %v", err)
+				d.logger.ErrorContext(ctx, "Failed to update sandbox network settings", "error", err)
 			}
 		}()
 	} else if sandboxDto.NetworkAllowList != nil && *sandboxDto.NetworkAllowList != "" {
 		go func() {
 			err = d.netRulesManager.SetNetworkRules(containerShortId, ip, *sandboxDto.NetworkAllowList)
 			if err != nil {
-				log.Errorf("Failed to update sandbox network settings: %v", err)
+				d.logger.ErrorContext(ctx, "Failed to update sandbox network settings", "error", err)
 			}
 		}()
 	}
@@ -129,7 +146,7 @@ func (d *DockerClient) Create(ctx context.Context, sandboxDto dto.CreateSandboxD
 		go func() {
 			err = d.netRulesManager.SetNetworkLimiter(containerShortId, ip)
 			if err != nil {
-				log.Errorf("Failed to update sandbox network settings: %v", err)
+				d.logger.ErrorContext(ctx, "Failed to update sandbox network settings", "error", err)
 			}
 		}()
 	}
@@ -137,18 +154,14 @@ func (d *DockerClient) Create(ctx context.Context, sandboxDto dto.CreateSandboxD
 	return c.ID, daemonVersion, nil
 }
 
-func (p *DockerClient) validateImageArchitecture(ctx context.Context, image string) error {
+func (p *DockerClient) validateImageArchitecture(image *image.InspectResponse) error {
 	defer timer.Timer()()
 
-	inspect, err := p.apiClient.ImageInspect(ctx, image)
-	if err != nil {
-		if errdefs.IsNotFound(err) {
-			return err
-		}
-		return fmt.Errorf("failed to inspect image: %w", err)
+	if image == nil {
+		return fmt.Errorf("image not found")
 	}
 
-	arch := strings.ToLower(inspect.Architecture)
+	arch := strings.ToLower(image.Architecture)
 	validArchs := []string{"amd64", "x86_64"}
 
 	for _, validArch := range validArchs {
@@ -157,5 +170,5 @@ func (p *DockerClient) validateImageArchitecture(ctx context.Context, image stri
 		}
 	}
 
-	return common_errors.NewConflictError(fmt.Errorf("image %s architecture (%s) is not x64 compatible", image, inspect.Architecture))
+	return common_errors.NewConflictError(fmt.Errorf("image %s architecture (%s) is not x64 compatible", image.ID, image.Architecture))
 }

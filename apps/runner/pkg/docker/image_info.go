@@ -57,8 +57,15 @@ func (d *DockerClient) InspectImageInRegistry(ctx context.Context, imageName str
 		return nil, err
 	}
 
+	totalSize, err := getImageSizeFromRegistry(ctx, imageName, registry)
+	if err != nil {
+		d.logger.WarnContext(ctx, "Failed to get image size from registry manifest", "imageName", imageName, "error", err)
+		totalSize = digest.Descriptor.Size
+		d.logger.WarnContext(ctx, "Falling back to descriptor size", "imageName", imageName, "size", totalSize)
+	}
+
 	return &ImageDigest{
 		Digest: digest.Descriptor.Digest.String(),
-		Size:   digest.Descriptor.Size,
+		Size:   totalSize,
 	}, nil
 }

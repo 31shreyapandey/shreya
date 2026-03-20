@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: AGPL-3.0
  */
 
+'use client'
+
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 

@@ -40,7 +40,8 @@ function normalizeRegistryUrl(url: string): string {
   if (!url || url.trim() === '' || url.toLowerCase().includes('docker.io')) {
     return DOCKER_HUB_URL
   }
-  return url
+  // Strip trailing slashes for consistent matching
+  return url.trim().replace(/\/+$/, '')
 }
 
 export interface ImageDetails {
@@ -376,7 +377,16 @@ export class DockerRegistryService {
       where: whereCondition,
     })
 
-    return this.findRegistryByUrlMatch(registries, imageName)
+    // Prioritize ORGANIZATION registries over others
+    // This ensures user-configured credentials take precedence over shared internal ones
+    const priority: Partial<Record<RegistryType, number>> = {
+      [RegistryType.ORGANIZATION]: 0,
+    }
+    const sortedRegistries = [...registries].sort(
+      (a, b) => (priority[a.registryType] ?? 1) - (priority[b.registryType] ?? 1),
+    )
+
+    return this.findRegistryByUrlMatch(sortedRegistries, imageName)
   }
 
   /**
@@ -545,9 +555,14 @@ export class DockerRegistryService {
    */
   private findRegistryByUrlMatch(registries: DockerRegistry[], targetString: string): DockerRegistry | null {
     for (const registry of registries) {
-      const strippedUrl = registry.url.replace(/^(https?:\/\/)/, '')
+      const strippedUrl = registry.url.replace(/^(https?:\/\/)/, '').replace(/\/+$/, '')
       if (targetString.startsWith(strippedUrl)) {
-        return registry
+        // Ensure match is at a proper boundary (followed by '/', ':', or end-of-string)
+        // to prevent "registry.depot.dev" from matching "registry.depot.dev-evil.com/..."
+        const nextChar = targetString[strippedUrl.length]
+        if (nextChar === undefined || nextChar === '/' || nextChar === ':') {
+          return registry
+        }
       }
     }
     return null

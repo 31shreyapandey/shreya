@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository, Not, In, Raw, ILike, FindOptionsWhere } from 'typeorm'
-import { v4 as uuidv4 } from 'uuid'
+import { v4 as uuidv4, validate as isUUID } from 'uuid'
 import { Snapshot } from '../entities/snapshot.entity'
 import { SnapshotState } from '../enums/snapshot-state.enum'
 import { CreateSnapshotDto } from '../dto/create-snapshot.dto'
@@ -25,7 +25,6 @@ import { SandboxCreatedEvent } from '../events/sandbox-create.event'
 import { Organization } from '../../organization/entities/organization.entity'
 import { OrganizationService } from '../../organization/services/organization.service'
 import { SnapshotRunner } from '../entities/snapshot-runner.entity'
-import { Sandbox } from '../entities/sandbox.entity'
 import { SandboxState } from '../enums/sandbox-state.enum'
 import { OrganizationEvents } from '../../organization/constants/organization-events.constant'
 import { OrganizationSuspendedSnapshotDeactivatedEvent } from '../../organization/events/organization-suspended-snapshot-deactivated.event'
@@ -49,6 +48,8 @@ import { SnapshotCreatedEvent } from '../events/snapshot-created.event'
 import { RunnerService } from './runner.service'
 import { RegionService } from '../../region/services/region.service'
 import { TypedConfigService } from '../../config/typed-config.service'
+import { SandboxRepository } from '../repositories/sandbox.repository'
+import { SnapshotActivatedEvent } from '../events/snapshot-activated.event'
 
 const IMAGE_NAME_REGEX = /^[a-zA-Z0-9_.\-:]+(\/[a-zA-Z0-9_.\-:]+)*(@sha256:[a-f0-9]{64})?$/
 @Injectable()
@@ -56,8 +57,7 @@ export class SnapshotService {
   private readonly logger = new Logger(SnapshotService.name)
 
   constructor(
-    @InjectRepository(Sandbox)
-    private readonly sandboxRepository: Repository<Sandbox>,
+    private readonly sandboxRepository: SandboxRepository,
     @InjectRepository(Snapshot)
     private readonly snapshotRepository: Repository<Snapshot>,
     @InjectRepository(BuildInfo)
@@ -296,6 +296,7 @@ export class SnapshotService {
 
       if (exists) {
         snapshot.state = SnapshotState.ACTIVE
+        snapshot.lastUsedAt = new Date()
       }
 
       try {
@@ -379,6 +380,16 @@ export class SnapshotService {
       take: limitNum,
     })
 
+    // Filter out snapshot regions that are not available to the organization
+    const availableRegions = await this.organizationService.listAvailableRegions(organizationId)
+    const availableRegionIds = new Set(availableRegions.map((r) => r.id))
+
+    for (const snapshot of items) {
+      if (snapshot.snapshotRegions) {
+        snapshot.snapshotRegions = snapshot.snapshotRegions.filter((sr) => availableRegionIds.has(sr.regionId))
+      }
+    }
+
     return {
       items,
       total,
@@ -394,6 +405,34 @@ export class SnapshotService {
 
     if (!snapshot) {
       throw new NotFoundException(`Snapshot ${snapshotId} not found`)
+    }
+
+    return snapshot
+  }
+
+  async getSnapshotWithRegions(snapshotIdOrName: string, organizationId: string): Promise<Snapshot> {
+    const where: FindOptionsWhere<Snapshot>[] = [
+      { name: snapshotIdOrName, organizationId },
+      { name: snapshotIdOrName, general: true },
+    ]
+    if (isUUID(snapshotIdOrName)) {
+      where.push({ id: snapshotIdOrName })
+    }
+
+    const snapshot = await this.snapshotRepository.findOne({
+      where,
+      relations: ['snapshotRegions'],
+      order: { general: 'ASC' },
+    })
+
+    if (!snapshot) {
+      throw new NotFoundException(`Snapshot ${snapshotIdOrName} not found`)
+    }
+
+    const availableRegions = await this.organizationService.listAvailableRegions(organizationId)
+    const availableRegionIds = new Set(availableRegions.map((r) => r.id))
+    if (snapshot.snapshotRegions) {
+      snapshot.snapshotRegions = snapshot.snapshotRegions.filter((sr) => availableRegionIds.has(sr.regionId))
     }
 
     return snapshot
@@ -437,11 +476,7 @@ export class SnapshotService {
       throw new NotFoundException(`Snapshot ${snapshot.id} has no initial runner`)
     }
 
-    const runner = await this.runnerService.findOne(snapshot.initialRunnerId)
-    if (!runner) {
-      throw new NotFoundException(`Initial runner for snapshot ${snapshot.id} not found`)
-    }
-
+    const runner = await this.runnerService.findOneOrFail(snapshot.initialRunnerId)
     const region = await this.regionService.findOne(runner.region, true)
 
     if (!region) {
@@ -568,7 +603,11 @@ export class SnapshotService {
       }
 
       snapshot.state = SnapshotState.PENDING
-      return await this.snapshotRepository.save(snapshot)
+      const savedSnapshot = await this.snapshotRepository.save(snapshot)
+
+      this.eventEmitter.emit(SnapshotEvents.ACTIVATED, new SnapshotActivatedEvent(savedSnapshot))
+
+      return savedSnapshot
     } catch (error) {
       await this.rollbackPendingUsage(organization.id, pendingSnapshotCountIncrement)
       throw error

@@ -63,6 +63,13 @@ export default defineConfig({
       ...generateI18nConfig(config),
     }),
   ],
+  security: {
+    allowedDomains: [
+      { hostname: 'daytona.io' },
+      { hostname: 'www.daytona.io' },
+      { hostname: 'localhost' },
+    ],
+  },
   output: 'server',
   adapter: node({
     mode: 'middleware',
@@ -70,7 +77,7 @@ export default defineConfig({
   outDir: '../../dist/apps/docs',
   vite: {
     ssr: {
-      noExternal: ['path-to-regexp', '@astrojs/react'],
+      noExternal: ['path-to-regexp', '@astrojs/react', 'zod'],
     },
   },
 })

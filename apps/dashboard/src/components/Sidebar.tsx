@@ -23,11 +23,13 @@ import { DAYTONA_DOCS_URL, DAYTONA_SLACK_URL } from '@/constants/ExternalLinks'
 import { useTheme } from '@/contexts/ThemeContext'
 import { FeatureFlags } from '@/enums/FeatureFlags'
 import { RoutePath } from '@/enums/RoutePath'
+import { useWebhookAppPortalAccessQuery } from '@/hooks/queries/useWebhookAppPortalAccessQuery'
 import { useConfig } from '@/hooks/useConfig'
 import { useSelectedOrganization } from '@/hooks/useSelectedOrganization'
 import { useUserOrganizationInvitations } from '@/hooks/useUserOrganizationInvitations'
 import { useWebhooks } from '@/hooks/useWebhooks'
 import { cn, getMetaKey } from '@/lib/utils'
+import { usePylon, usePylonCommands } from '@/vendor/pylon'
 import { OrganizationRolePermissionsEnum, OrganizationUserRoleEnum } from '@daytonaio/api-client'
 import {
   ArrowRightIcon,
@@ -37,21 +39,24 @@ import {
   ChevronsUpDown,
   Container,
   CreditCard,
+  FlaskConical,
   HardDrive,
+  Joystick,
   KeyRound,
+  LifeBuoyIcon,
   ListChecks,
   LockKeyhole,
   LogOut,
   Mail,
   MapPinned,
-  Moon,
+  MoonIcon,
   PackageOpen,
   SearchIcon,
   Server,
   Settings,
   Slack,
   SquareUserRound,
-  Sun,
+  SunIcon,
   TextSearch,
   Users,
 } from 'lucide-react'
@@ -59,14 +64,14 @@ import { useFeatureFlagEnabled, usePostHog } from 'posthog-js/react'
 import React, { useMemo } from 'react'
 import { useAuth } from 'react-oidc-context'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { CommandConfig, useCommandPaletteActions, useRegisterCommands } from './CommandPalette'
 import {
-  CommandConfig,
-  useCommandPaletteActions,
-  useIsCommandPaletteEnabled,
-  useRegisterCommands,
-} from './CommandPalette'
-import { Button } from './ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu'
 import { Kbd } from './ui/kbd'
 import { ScrollArea } from './ui/scroll-area'
 
@@ -113,8 +118,12 @@ export function Sidebar({ isBannerVisible, billingEnabled, version }: SidebarPro
   const { selectedOrganization, authenticatedUserOrganizationMember, authenticatedUserHasPermission } =
     useSelectedOrganization()
   const { count: organizationInvitationsCount } = useUserOrganizationInvitations()
-  const { isInitialized: webhooksInitialized, openAppPortal } = useWebhooks()
+  const { isInitialized: webhooksInitialized } = useWebhooks()
+  const webhooksAccess = useWebhookAppPortalAccessQuery(selectedOrganization?.id)
   const orgInfraEnabled = useFeatureFlagEnabled(FeatureFlags.ORGANIZATION_INFRASTRUCTURE)
+  const organizationExperimentsEnabled = useFeatureFlagEnabled(FeatureFlags.ORGANIZATION_EXPERIMENTS)
+  const playgroundEnabled = useFeatureFlagEnabled(FeatureFlags.DASHBOARD_PLAYGROUND)
+  const webhooksEnabled = useFeatureFlagEnabled(FeatureFlags.DASHBOARD_WEBHOOKS)
 
   const sidebarItems = useMemo(() => {
     const arr: SidebarItem[] = [
@@ -165,12 +174,22 @@ export function Sidebar({ isBannerVisible, billingEnabled, version }: SidebarPro
 
     // Add Webhooks link if webhooks are initialized
     if (webhooksInitialized) {
-      arr.push({
-        icon: <Mail size={16} strokeWidth={1.5} />,
-        label: 'Webhooks',
-        path: '#webhooks' as any, // This will be handled by onClick
-        onClick: () => openAppPortal(),
-      })
+      if (webhooksEnabled) {
+        arr.push({
+          icon: <Mail size={16} strokeWidth={1.5} />,
+          label: 'Webhooks',
+          path: RoutePath.WEBHOOKS,
+        })
+      } else {
+        arr.push({
+          icon: <Mail size={16} strokeWidth={1.5} />,
+          label: 'Webhooks',
+          path: '#webhooks' as any, // This will be handled by onClick
+          onClick: () => {
+            window.open(webhooksAccess.data?.url, '_blank', 'noopener,noreferrer')
+          },
+        })
+      }
     }
 
     if (authenticatedUserOrganizationMember?.role === OrganizationUserRoleEnum.OWNER) {
@@ -193,7 +212,29 @@ export function Sidebar({ isBannerVisible, billingEnabled, version }: SidebarPro
     }
 
     return arr
-  }, [authenticatedUserOrganizationMember?.role, selectedOrganization?.personal, webhooksInitialized, openAppPortal])
+  }, [
+    authenticatedUserOrganizationMember?.role,
+    selectedOrganization?.personal,
+    webhooksInitialized,
+    webhooksAccess.data?.url,
+    webhooksEnabled,
+  ])
+
+  const experimentalItems = useMemo(() => {
+    const arr: SidebarItem[] = []
+
+    if (
+      organizationExperimentsEnabled &&
+      authenticatedUserOrganizationMember?.role === OrganizationUserRoleEnum.OWNER
+    ) {
+      arr.push({
+        icon: <FlaskConical size={16} strokeWidth={1.5} />,
+        label: 'Experimental',
+        path: RoutePath.EXPERIMENTAL,
+      })
+    }
+    return arr
+  }, [organizationExperimentsEnabled, authenticatedUserOrganizationMember?.role])
 
   const billingItems = useMemo(() => {
     if (!billingEnabled || authenticatedUserOrganizationMember?.role !== OrganizationUserRoleEnum.OWNER) {
@@ -243,14 +284,33 @@ export function Sidebar({ isBannerVisible, billingEnabled, version }: SidebarPro
     signoutRedirect()
   }
 
+  const miscItems = useMemo(() => {
+    if (!playgroundEnabled) {
+      return []
+    }
+
+    return [
+      playgroundEnabled && {
+        icon: <Joystick size={16} strokeWidth={1.5} />,
+        label: 'Playground',
+        path: RoutePath.PLAYGROUND,
+      },
+    ]
+  }, [playgroundEnabled])
+
   const sidebarGroups: { label: string; items: SidebarItem[] }[] = useMemo(() => {
     return [
       { label: 'Sandboxes', items: sidebarItems },
+      {
+        label: 'Misc',
+        items: miscItems,
+      },
       { label: 'Settings', items: settingsItems },
       { label: 'Billing', items: billingItems },
       { label: 'Infrastructure', items: infrastructureItems },
+      { label: 'Experimental', items: experimentalItems },
     ].filter((group) => group.items.length > 0)
-  }, [sidebarItems, settingsItems, billingItems, infrastructureItems])
+  }, [sidebarItems, settingsItems, billingItems, infrastructureItems, experimentalItems, miscItems])
 
   const commandItems = useMemo(() => {
     return sidebarGroups
@@ -274,11 +334,13 @@ export function Sidebar({ isBannerVisible, billingEnabled, version }: SidebarPro
       )
   }, [sidebarGroups])
 
+  const { unreadCount: pylonUnreadCount, toggle: togglePylon, isEnabled: pylonEnabled } = usePylon()
+  usePylonCommands()
+
   const commandPaletteActions = useCommandPaletteActions()
 
   useNavCommands(commandItems)
 
-  const cmdkEnabled = useIsCommandPaletteEnabled()
   const metaKey = getMetaKey()
 
   return (
@@ -297,21 +359,19 @@ export function Sidebar({ isBannerVisible, billingEnabled, version }: SidebarPro
         </div>
         <SidebarMenu>
           <OrganizationPicker />
-          {cmdkEnabled && (
-            <SidebarMenuItem className="mb-1">
-              <SidebarMenuButton
-                tooltip={`Search ${metaKey}+K`}
-                variant="outline"
-                className="flex items-center gap-2 justify-between dark:bg-input/30 dark:hover:bg-sidebar-accent hover:shadow-[0_0_0_1px_hsl(var(--sidebar-border))]"
-                onClick={() => commandPaletteActions.setIsOpen(true)}
-              >
-                <span className="flex items-center gap-2">
-                  <SearchIcon className="w-4 h-4" /> Search
-                </span>
-                <Kbd className="whitespace-nowrap">{metaKey} K</Kbd>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          )}
+          <SidebarMenuItem className="mb-1">
+            <SidebarMenuButton
+              tooltip={`Search ${metaKey}+K`}
+              variant="outline"
+              className="flex items-center gap-2 justify-between dark:bg-input/30 dark:hover:bg-sidebar-accent hover:shadow-[0_0_0_1px_hsl(var(--sidebar-border))]"
+              onClick={() => commandPaletteActions.setIsOpen(true)}
+            >
+              <span className="flex items-center gap-2">
+                <SearchIcon className="w-4 h-4" /> Search
+              </span>
+              <Kbd className="whitespace-nowrap">{metaKey} K</Kbd>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
@@ -353,18 +413,25 @@ export function Sidebar({ isBannerVisible, billingEnabled, version }: SidebarPro
       </SidebarContent>
       <SidebarFooter className="pb-4">
         <SidebarMenu>
-          <SidebarMenuItem key="theme-toggle">
-            <SidebarMenuButton
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              className="h-8 py-0"
-              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              tooltip="Toggle theme"
-            >
-              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-              <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem key="slack">
+          {pylonEnabled && (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Support"
+                onClick={() => {
+                  togglePylon()
+                }}
+              >
+                <LifeBuoyIcon className="size-4" strokeWidth={1.5} />
+                Support
+                {pylonUnreadCount > 0 && (
+                  <div className={cn('w-2 h-2 bg-green-500 rounded-full transition-all')}>
+                    <div className={cn('w-full h-full bg-green-500 rounded-full animate-ping')} />
+                  </div>
+                )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
+          <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Slack">
               <a href={DAYTONA_SLACK_URL} className=" h-8 py-0" target="_blank" rel="noopener noreferrer">
                 <Slack size={16} strokeWidth={1.5} />
@@ -372,7 +439,7 @@ export function Sidebar({ isBannerVisible, billingEnabled, version }: SidebarPro
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <SidebarMenuItem key="docs">
+          <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Docs">
               <a href={DAYTONA_DOCS_URL} className=" h-8 py-0" target="_blank" rel="noopener noreferrer">
                 <BookOpen size={16} strokeWidth={1.5} />
@@ -409,42 +476,41 @@ export function Sidebar({ isBannerVisible, billingEnabled, version }: SidebarPro
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="start" className="w-[--radix-popper-anchor-width] min-w-[12rem]">
-                {config.linkedAccountsEnabled && (
-                  <DropdownMenuItem asChild>
-                    <Button variant="ghost" className="w-full cursor-pointer justify-start" asChild>
-                      <Link to={RoutePath.ACCOUNT_SETTINGS}>
-                        <Settings className="w-4 h-4" />
-                        Account Settings
-                      </Link>
-                    </Button>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem asChild>
-                  <Button variant="ghost" className="w-full cursor-pointer justify-start" asChild>
-                    <Link to={RoutePath.USER_INVITATIONS}>
-                      <Mail className="w-4 h-4" />
-                      Invitations
-                      {organizationInvitationsCount > 0 && (
-                        <span className="ml-auto px-2 py-0.5 text-xs font-medium bg-secondary rounded-full">
-                          {organizationInvitationsCount}
-                        </span>
-                      )}
-                    </Link>
-                  </Button>
+                <DropdownMenuItem asChild className="cursor-pointer">
+                  <Link to={RoutePath.ACCOUNT_SETTINGS}>
+                    <Settings className="size-4" />
+                    Account Settings
+                  </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Button variant="ghost" className="w-full cursor-pointer justify-start" asChild>
-                    <Link to={RoutePath.ONBOARDING}>
-                      <ListChecks className="w-4 h-4" />
-                      Onboarding
-                    </Link>
-                  </Button>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                >
+                  {theme === 'dark' ? <SunIcon className="size-4" /> : <MoonIcon className="size-4" />}
+                  {theme === 'dark' ? 'Light mode' : 'Dark mode'}
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Button variant="ghost" className="w-full cursor-pointer justify-start" onClick={handleSignOut}>
-                    <LogOut className="w-4 h-4" />
-                    Sign out
-                  </Button>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild className="cursor-pointer">
+                  <Link to={RoutePath.USER_INVITATIONS}>
+                    <Mail className="size-4" />
+                    Invitations
+                    {organizationInvitationsCount > 0 && (
+                      <span className="ml-auto px-2 py-0.5 text-xs font-medium bg-secondary rounded-full">
+                        {organizationInvitationsCount}
+                      </span>
+                    )}
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild className="cursor-pointer">
+                  <Link to={RoutePath.ONBOARDING}>
+                    <ListChecks className="size-4" />
+                    Onboarding
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="cursor-pointer" onClick={handleSignOut}>
+                  <LogOut className="size-4" />
+                  Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

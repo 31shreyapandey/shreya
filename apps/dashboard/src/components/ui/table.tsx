@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 
 const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
   ({ className, ...props }, ref) => (
-    <div className="flex-1 w-full overflow-auto rounded-md scrollbar-sm">
+    <div className="flex-1 w-full overflow-auto rounded-md scrollbar-thin scrollbar-thumb-border scrollbar-track-background">
       <table ref={ref} className={cn('w-full caption-bottom text-sm', className)} {...props} />
     </div>
   ),
@@ -56,7 +56,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      'bg-inherit h-10 px-2 text-left align-middle font-medium [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
+      'bg-inherit h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
       sticky && cn('sticky', 'z-10', sticky === 'left' ? 'left-0' : 'right-0'),
       className,
     )}

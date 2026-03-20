@@ -1,5 +1,5 @@
 /* tslint:disable */
-
+/* eslint-disable */
 /**
  * Daytona
  * Daytona AI platform API Docs
@@ -12,28 +12,36 @@
  * Do not edit the class manually.
  */
 
+
+// May contain unused imports in some cases
+// @ts-ignore
+import type { WebhookEvent } from './webhook-event';
+
 /**
- *
+ * 
  * @export
  * @interface SendWebhookDto
  */
 export interface SendWebhookDto {
-  /**
-   * The type of event being sent
-   * @type {string}
-   * @memberof SendWebhookDto
-   */
-  eventType: string
-  /**
-   * The payload data to send
-   * @type {object}
-   * @memberof SendWebhookDto
-   */
-  payload: object
-  /**
-   * Optional event ID for idempotency
-   * @type {string}
-   * @memberof SendWebhookDto
-   */
-  eventId?: string
+    /**
+     * The type of event being sent
+     * @type {WebhookEvent}
+     * @memberof SendWebhookDto
+     */
+    'eventType': WebhookEvent;
+    /**
+     * The payload data to send
+     * @type {object}
+     * @memberof SendWebhookDto
+     */
+    'payload': object;
+    /**
+     * Optional event ID for idempotency
+     * @type {string}
+     * @memberof SendWebhookDto
+     */
+    'eventId'?: string;
 }
+
+
+

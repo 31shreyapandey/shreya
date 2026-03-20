@@ -84,6 +84,8 @@ type Workspace struct {
 	DaemonVersion *string `json:"daemonVersion,omitempty"`
 	// The runner ID of the sandbox
 	RunnerId *string `json:"runnerId,omitempty"`
+	// The toolbox proxy URL for the sandbox
+	ToolboxProxyUrl string `json:"toolboxProxyUrl"`
 	// The image used for the workspace
 	Image *string `json:"image,omitempty"`
 	// The state of the snapshot
@@ -91,7 +93,7 @@ type Workspace struct {
 	// The creation timestamp of the last snapshot
 	SnapshotCreatedAt *string `json:"snapshotCreatedAt,omitempty"`
 	// Additional information about the sandbox
-	Info                 *SandboxInfo `json:"info,omitempty"`
+	Info *SandboxInfo `json:"info,omitempty"`
 	AdditionalProperties map[string]interface{}
 }
 
@@ -101,7 +103,7 @@ type _Workspace Workspace
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewWorkspace(id string, organizationId string, name string, user string, env map[string]string, labels map[string]string, public bool, networkBlockAll bool, target string, cpu float32, gpu float32, memory float32, disk float32) *Workspace {
+func NewWorkspace(id string, organizationId string, name string, user string, env map[string]string, labels map[string]string, public bool, networkBlockAll bool, target string, cpu float32, gpu float32, memory float32, disk float32, toolboxProxyUrl string) *Workspace {
 	this := Workspace{}
 	this.Id = id
 	this.OrganizationId = organizationId
@@ -116,6 +118,7 @@ func NewWorkspace(id string, organizationId string, name string, user string, en
 	this.Gpu = gpu
 	this.Memory = memory
 	this.Disk = disk
+	this.ToolboxProxyUrl = toolboxProxyUrl
 	return &this
 }
 
@@ -1018,6 +1021,30 @@ func (o *Workspace) SetRunnerId(v string) {
 	o.RunnerId = &v
 }
 
+// GetToolboxProxyUrl returns the ToolboxProxyUrl field value
+func (o *Workspace) GetToolboxProxyUrl() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.ToolboxProxyUrl
+}
+
+// GetToolboxProxyUrlOk returns a tuple with the ToolboxProxyUrl field value
+// and a boolean to check if the value has been set.
+func (o *Workspace) GetToolboxProxyUrlOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.ToolboxProxyUrl, true
+}
+
+// SetToolboxProxyUrl sets field value
+func (o *Workspace) SetToolboxProxyUrl(v string) {
+	o.ToolboxProxyUrl = v
+}
+
 // GetImage returns the Image field value if set, zero value otherwise.
 func (o *Workspace) GetImage() string {
 	if o == nil || IsNil(o.Image) {
@@ -1147,7 +1174,7 @@ func (o *Workspace) SetInfo(v SandboxInfo) {
 }
 
 func (o Workspace) MarshalJSON() ([]byte, error) {
-	toSerialize, err := o.ToMap()
+	toSerialize,err := o.ToMap()
 	if err != nil {
 		return []byte{}, err
 	}
@@ -1223,6 +1250,7 @@ func (o Workspace) ToMap() (map[string]interface{}, error) {
 	if !IsNil(o.RunnerId) {
 		toSerialize["runnerId"] = o.RunnerId
 	}
+	toSerialize["toolboxProxyUrl"] = o.ToolboxProxyUrl
 	if !IsNil(o.Image) {
 		toSerialize["image"] = o.Image
 	}
@@ -1261,6 +1289,7 @@ func (o *Workspace) UnmarshalJSON(data []byte) (err error) {
 		"gpu",
 		"memory",
 		"disk",
+		"toolboxProxyUrl",
 	}
 
 	allProperties := make(map[string]interface{})
@@ -1268,10 +1297,10 @@ func (o *Workspace) UnmarshalJSON(data []byte) (err error) {
 	err = json.Unmarshal(data, &allProperties)
 
 	if err != nil {
-		return err
+		return err;
 	}
 
-	for _, requiredProperty := range requiredProperties {
+	for _, requiredProperty := range(requiredProperties) {
 		if _, exists := allProperties[requiredProperty]; !exists {
 			return fmt.Errorf("no value given for required property %v", requiredProperty)
 		}
@@ -1321,6 +1350,7 @@ func (o *Workspace) UnmarshalJSON(data []byte) (err error) {
 		delete(additionalProperties, "class")
 		delete(additionalProperties, "daemonVersion")
 		delete(additionalProperties, "runnerId")
+		delete(additionalProperties, "toolboxProxyUrl")
 		delete(additionalProperties, "image")
 		delete(additionalProperties, "snapshotState")
 		delete(additionalProperties, "snapshotCreatedAt")
@@ -1366,3 +1396,5 @@ func (v *NullableWorkspace) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

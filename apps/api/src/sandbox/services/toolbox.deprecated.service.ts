@@ -4,24 +4,24 @@
  */
 
 import { Injectable, NotFoundException, HttpException, BadRequestException, Logger } from '@nestjs/common'
-import { InjectRepository } from '@nestjs/typeorm'
-import { Repository } from 'typeorm'
 import { Sandbox } from '../entities/sandbox.entity'
 import { Runner } from '../entities/runner.entity'
 import axios from 'axios'
 import { SandboxState } from '../enums/sandbox-state.enum'
 import { RedisLockProvider } from '../common/redis-lock.provider'
+import { SandboxService } from './sandbox.service'
+import { RunnerService } from './runner.service'
+import { SandboxRepository } from '../repositories/sandbox.repository'
 
 @Injectable()
 export class ToolboxService {
   private readonly logger = new Logger(ToolboxService.name)
 
   constructor(
-    @InjectRepository(Sandbox)
-    private readonly sandboxRepository: Repository<Sandbox>,
-    @InjectRepository(Runner)
-    private readonly runnerRepository: Repository<Runner>,
+    private readonly sandboxRepository: SandboxRepository,
     private readonly redisLockProvider: RedisLockProvider,
+    private readonly sandboxService: SandboxService,
+    private readonly runnerService: RunnerService,
   ) {}
 
   async forwardRequestToRunner(sandboxId: string, method: string, path: string, data?: any): Promise<any> {
@@ -83,8 +83,9 @@ export class ToolboxService {
   }
 
   public async getRunner(sandboxId: string): Promise<Runner> {
+    let sandbox: Sandbox | null = null
     try {
-      const sandbox = await this.sandboxRepository.findOne({
+      sandbox = await this.sandboxRepository.findOne({
         where: { id: sandboxId },
       })
 
@@ -92,13 +93,7 @@ export class ToolboxService {
         throw new NotFoundException('Sandbox not found')
       }
 
-      const runner = await this.runnerRepository.findOne({
-        where: { id: sandbox.runnerId },
-      })
-
-      if (!runner) {
-        throw new NotFoundException('Runner not found for the sandbox')
-      }
+      const runner = await this.runnerService.findOneOrFail(sandbox.runnerId)
 
       if (sandbox.state !== SandboxState.STARTED) {
         throw new BadRequestException('Sandbox is not running')
@@ -112,9 +107,7 @@ export class ToolboxService {
       // redis for cooldown period - 10 seconds
       // prevents database flooding when multiple requests are made at the same time
       if (acquired) {
-        await this.sandboxRepository.update(sandboxId, {
-          lastActivityAt: new Date(),
-        })
+        await this.sandboxService.updateLastActivityAt(sandboxId, new Date())
       }
     }
   }

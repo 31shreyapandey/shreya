@@ -33,20 +33,14 @@ export class WebhookController {
   ) {}
 
   @Post('organizations/:organizationId/app-portal-access')
-  @ApiOperation({ summary: 'Get Svix Consumer App Portal access URL for an organization' })
+  @ApiOperation({ summary: 'Get Svix Consumer App Portal access for an organization' })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'App Portal access generated successfully',
     type: WebhookAppPortalAccessDto,
   })
-  @Audit({
-    action: AuditAction.GET_WEBHOOK_APP_PORTAL_ACCESS,
-    targetType: AuditTarget.ORGANIZATION,
-    targetIdFromRequest: (req) => req.params.organizationId,
-  })
   async getAppPortalAccess(@Param('organizationId') organizationId: string): Promise<WebhookAppPortalAccessDto> {
-    const url = await this.webhookService.getAppPortalAccessUrl(organizationId)
-    return { url }
+    return this.webhookService.getAppPortalAccess(organizationId)
   }
 
   @Post('organizations/:organizationId/send')

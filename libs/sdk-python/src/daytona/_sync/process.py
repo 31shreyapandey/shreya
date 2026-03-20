@@ -6,7 +6,6 @@ from __future__ import annotations
 import base64
 import json
 import re
-from typing import Callable
 
 import websockets
 from daytona_toolbox_api_client import (
@@ -18,16 +17,20 @@ from daytona_toolbox_api_client import (
     PtyResizeRequest,
     PtySessionInfo,
     Session,
+    SessionSendInputRequest,
 )
 from websockets.sync.client import connect
 
 from .._utils.errors import intercept_errors
+from .._utils.otel_decorator import with_instrumentation
 from .._utils.stream import std_demux_stream
+from .._utils.timeout import http_timeout
 from ..common.charts import Chart, parse_chart
 from ..common.process import (
     CodeRunParams,
     ExecuteResponse,
     ExecutionArtifacts,
+    OutputHandler,
     SessionCommandLogsResponse,
     SessionExecuteRequest,
     SessionExecuteResponse,
@@ -46,19 +49,15 @@ class Process:
         self,
         code_toolbox: SandboxCodeToolbox,
         api_client: ProcessApi,
-        ensure_toolbox_url: Callable[[], None],
     ):
         """Initialize a new Process instance.
 
         Args:
             code_toolbox (SandboxCodeToolbox): Language-specific code execution toolbox.
             api_client (ProcessApi): API client for process operations.
-            ensure_toolbox_url (Callable[[], None]): Ensures the toolbox API URL is initialized.
-            Must be called before invoking any private methods on the API client.
         """
         self._code_toolbox: SandboxCodeToolbox = code_toolbox
         self._api_client: ProcessApi = api_client
-        self._ensure_toolbox_url: Callable[[], None] = ensure_toolbox_url
 
     @staticmethod
     def _parse_output(lines: list[str]) -> ExecutionArtifacts:
@@ -93,6 +92,7 @@ class Process:
         return ExecutionArtifacts(stdout="\n".join(stdout_lines), charts=charts)
 
     @intercept_errors(message_prefix="Failed to execute command: ")
+    @with_instrumentation()
     def exec(
         self,
         command: str,
@@ -164,6 +164,7 @@ class Process:
             additional_properties=response.additional_properties,
         )
 
+    @with_instrumentation()
     def code_run(
         self,
         code: str,
@@ -239,6 +240,7 @@ class Process:
         return self.exec(command, env=params.env if params else None, timeout=timeout)
 
     @intercept_errors(message_prefix="Failed to create session: ")
+    @with_instrumentation()
     def create_session(self, session_id: str) -> None:
         """Creates a new long-running background session in the Sandbox.
 
@@ -283,7 +285,26 @@ class Process:
         """
         return self._api_client.get_session(session_id=session_id)
 
+    @intercept_errors(message_prefix="Failed to get sandbox entrypoint session: ")
+    def get_entrypoint_session(self) -> Session:
+        """Gets the sandbox entrypoint session.
+
+        Returns:
+            Session: Entrypoint session information including:
+                - session_id: The entrypoint session's unique identifier
+                - commands: List of commands executed in the entrypoint session
+
+        Example:
+            ```python
+            session = sandbox.process.get_entrypoint_session()
+            for cmd in session.commands:
+                print(f"Command: {cmd.command}")
+            ```
+        """
+        return self._api_client.get_entrypoint_session()
+
     @intercept_errors(message_prefix="Failed to get session command: ")
+    @with_instrumentation()
     def get_session_command(self, session_id: str, command_id: str) -> Command:
         """Gets information about a specific command executed in a session.
 
@@ -307,6 +328,7 @@ class Process:
         return self._api_client.get_session_command(session_id=session_id, command_id=command_id)
 
     @intercept_errors(message_prefix="Failed to execute session command: ")
+    @with_instrumentation()
     def execute_session_command(
         self,
         session_id: str,
@@ -352,7 +374,7 @@ class Process:
         response = self._api_client.session_execute_command(
             session_id=session_id,
             request=req,
-            _request_timeout=timeout or None,
+            _request_timeout=http_timeout(timeout),
         )
 
         stdout, stderr = demux_log(response.output.encode("utf-8", "ignore") if response.output else b"")
@@ -367,6 +389,7 @@ class Process:
         )
 
     @intercept_errors(message_prefix="Failed to get session command logs: ")
+    @with_instrumentation()
     def get_session_command_logs(self, session_id: str, command_id: str) -> SessionCommandLogsResponse:
         """Get the logs for a command executed in a session.
 
@@ -398,15 +421,19 @@ class Process:
 
     @intercept_errors(message_prefix="Failed to get session command logs: ")
     async def get_session_command_logs_async(
-        self, session_id: str, command_id: str, on_stdout: Callable[[str], None], on_stderr: Callable[[str], None]
+        self, session_id: str, command_id: str, on_stdout: OutputHandler[str], on_stderr: OutputHandler[str]
     ) -> None:
         """Asynchronously retrieves and processes the logs for a command executed in a session as they become available.
+
+        Accepts both sync and async callbacks. Async callbacks are awaited.
+        Blocking synchronous operations inside callbacks may cause WebSocket
+        disconnections — use async callbacks and async libraries to avoid this.
 
         Args:
             session_id (str): Unique identifier of the session.
             command_id (str): Unique identifier of the command.
-            on_stdout (Callable[[str], None]): Callback function to handle stdout log chunks as they arrive.
-            on_stderr (Callable[[str], None]): Callback function to handle stderr log chunks as they arrive.
+            on_stdout (OutputHandler[str]): Callback function to handle stdout log chunks as they arrive.
+            on_stderr (OutputHandler[str]): Callback function to handle stderr log chunks as they arrive.
 
         Example:
             ```python
@@ -419,7 +446,6 @@ class Process:
             ```
         """
 
-        self._ensure_toolbox_url()
         _, url, headers, *_ = self._api_client._get_session_command_logs_serialize(
             session_id=session_id,
             command_id=command_id,
@@ -435,7 +461,73 @@ class Process:
         async with websockets.connect(url, additional_headers=headers) as ws:
             await std_demux_stream(ws, on_stdout, on_stderr)
 
+    @intercept_errors(message_prefix="Failed to get entrypoint logs: ")
+    @with_instrumentation()
+    def get_entrypoint_logs(self) -> SessionCommandLogsResponse:
+        """Get the logs for the entrypoint session.
+
+        Returns:
+            SessionCommandLogsResponse: Command logs including:
+                - output: Combined command output (stdout and stderr)
+                - stdout: Standard output from the command
+                - stderr: Standard error from the command
+
+        Example:
+            ```python
+            logs = sandbox.process.get_entrypoint_logs()
+            print(f"Command stdout: {logs.stdout}")
+            print(f"Command stderr: {logs.stderr}")
+            ```
+        """
+        response = self._api_client.get_entrypoint_logs_without_preload_content()
+
+        return parse_session_command_logs(response.data)
+
+    @intercept_errors(message_prefix="Failed to get entrypoint logs: ")
+    async def get_entrypoint_logs_async(self, on_stdout: OutputHandler[str], on_stderr: OutputHandler[str]) -> None:
+        """Asynchronously retrieves and processes the logs for the entrypoint session as they become available.
+
+        Args:
+            on_stdout OutputHandler[str]: Callback function to handle stdout log chunks as they arrive.
+            on_stderr OutputHandler[str]: Callback function to handle stderr log chunks as they arrive.
+
+        Example:
+            ```python
+            await sandbox.process.get_entrypoint_logs_async(
+                lambda log: print(f"[STDOUT]: {log}"),
+                lambda log: print(f"[STDERR]: {log}"),
+            )
+            ```
+        """
+
+        _, url, headers, *_ = self._api_client._get_entrypoint_logs_serialize(
+            follow=True,
+            _request_auth=None,
+            _content_type=None,
+            _headers=None,
+            _host_index=None,
+        )
+
+        url = re.sub(r"^http", "ws", url)
+
+        async with websockets.connect(url, additional_headers=headers) as ws:
+            await std_demux_stream(ws, on_stdout, on_stderr)
+
+    @intercept_errors(message_prefix="Failed to send session command input: ")
+    def send_session_command_input(self, session_id: str, command_id: str, data: str) -> None:
+        """Sends input data to a command executed in a session.
+
+        Args:
+            session_id (str): Unique identifier of the session.
+            command_id (str): Unique identifier of the command.
+            data (str): Input data to send.
+        """
+        self._api_client.send_input(
+            session_id=session_id, command_id=command_id, request=SessionSendInputRequest(data=data)
+        )
+
     @intercept_errors(message_prefix="Failed to list sessions: ")
+    @with_instrumentation()
     def list_sessions(self) -> list[Session]:
         """Lists all sessions in the Sandbox.
 
@@ -453,6 +545,7 @@ class Process:
         return self._api_client.list_sessions()
 
     @intercept_errors(message_prefix="Failed to delete session: ")
+    @with_instrumentation()
     def delete_session(self, session_id: str) -> None:
         """Terminates and removes a session from the Sandbox, cleaning up any resources
         associated with it.
@@ -473,6 +566,7 @@ class Process:
         self._api_client.delete_session(session_id=session_id)
 
     @intercept_errors(message_prefix="Failed to create PTY session: ")
+    @with_instrumentation()
     def create_pty_session(
         self,
         id: str,
@@ -515,6 +609,7 @@ class Process:
         )
 
     @intercept_errors(message_prefix="Failed to connect PTY session: ")
+    @with_instrumentation()
     def connect_pty_session(
         self,
         session_id: str,
@@ -533,7 +628,6 @@ class Process:
         Raises:
             DaytonaError: If the PTY session doesn't exist or connection fails.
         """
-        self._ensure_toolbox_url()
         _, url, headers, *_ = self._api_client._connect_pty_session_serialize(
             session_id=session_id,
             _request_auth=None,
@@ -562,6 +656,7 @@ class Process:
         return handle
 
     @intercept_errors(message_prefix="Failed to list PTY sessions: ")
+    @with_instrumentation()
     def list_pty_sessions(self) -> list[PtySessionInfo]:
         """Lists all PTY sessions in the Sandbox.
 
@@ -585,6 +680,7 @@ class Process:
         return (self._api_client.list_pty_sessions()).sessions
 
     @intercept_errors(message_prefix="Failed to get PTY session info: ")
+    @with_instrumentation()
     def get_pty_session_info(self, session_id: str) -> PtySessionInfo:
         """Gets detailed information about a specific PTY session.
 
@@ -615,6 +711,7 @@ class Process:
         return self._api_client.get_pty_session(session_id=session_id)
 
     @intercept_errors(message_prefix="Failed to kill PTY session: ")
+    @with_instrumentation()
     def kill_pty_session(self, session_id: str) -> None:
         """Kills a PTY session and terminates its associated process.
 
@@ -642,6 +739,7 @@ class Process:
         _ = self._api_client.delete_pty_session(session_id=session_id)
 
     @intercept_errors(message_prefix="Failed to resize PTY session: ")
+    @with_instrumentation()
     def resize_pty_session(self, session_id: str, pty_size: PtySize) -> PtySessionInfo:
         """Resizes a PTY session's terminal dimensions.
 

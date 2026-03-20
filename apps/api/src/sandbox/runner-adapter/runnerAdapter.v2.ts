@@ -24,6 +24,7 @@ import { JobType } from '../enums/job-type.enum'
 import { JobStatus } from '../enums/job-status.enum'
 import { ResourceType } from '../enums/resource-type.enum'
 import { JobService } from '../services/job.service'
+import { SandboxRepository } from '../repositories/sandbox.repository'
 import {
   CreateSandboxDTO,
   CreateBackupDTO,
@@ -33,6 +34,7 @@ import {
   InspectSnapshotInRegistryRequest,
   RecoverSandboxDTO,
 } from '@daytonaio/runner-api-client'
+import { SnapshotStateError } from '../errors/snapshot-state-error'
 
 /**
  * RunnerAdapterV2 implements RunnerAdapter for v2 runners.
@@ -45,8 +47,7 @@ export class RunnerAdapterV2 implements RunnerAdapter {
   private runner: Runner
 
   constructor(
-    @InjectRepository(Sandbox)
-    private readonly sandboxRepository: Repository<Sandbox>,
+    private readonly sandboxRepository: SandboxRepository,
     @InjectRepository(Job)
     private readonly jobRepository: Repository<Job>,
     private readonly jobService: JobService,
@@ -137,6 +138,8 @@ export class RunnerAdapterV2 implements RunnerAdapter {
     registry?: DockerRegistry,
     entrypoint?: string[],
     metadata?: { [key: string]: string },
+    otelEndpoint?: string,
+    skipStart?: boolean,
   ): Promise<StartSandboxResponse | undefined> {
     const payload: CreateSandboxDTO = {
       id: sandbox.id,
@@ -165,6 +168,11 @@ export class RunnerAdapterV2 implements RunnerAdapter {
       networkBlockAll: sandbox.networkBlockAll,
       networkAllowList: sandbox.networkAllowList,
       metadata: metadata,
+      authToken: sandbox.authToken,
+      otelEndpoint: otelEndpoint,
+      skipStart: skipStart,
+      organizationId: sandbox.organizationId,
+      regionId: sandbox.region,
     }
 
     await this.jobService.createJob(
@@ -184,16 +192,13 @@ export class RunnerAdapterV2 implements RunnerAdapter {
 
   async startSandbox(
     sandboxId: string,
+    authToken: string,
     metadata?: { [key: string]: string },
   ): Promise<StartSandboxResponse | undefined> {
-    await this.jobService.createJob(
-      null,
-      JobType.START_SANDBOX,
-      this.runner.id,
-      ResourceType.SANDBOX,
-      sandboxId,
+    await this.jobService.createJob(null, JobType.START_SANDBOX, this.runner.id, ResourceType.SANDBOX, sandboxId, {
+      authToken,
       metadata,
-    )
+    })
 
     this.logger.debug(`Created START_SANDBOX job for sandbox ${sandboxId} on runner ${this.runner.id}`)
 
@@ -243,10 +248,6 @@ export class RunnerAdapterV2 implements RunnerAdapter {
     )
 
     this.logger.debug(`Created RECOVER_SANDBOX job for sandbox ${sandbox.id} on runner ${this.runner.id}`)
-  }
-
-  async removeDestroyedSandbox(_sandboxId: string): Promise<void> {
-    throw new Error('removeDestroyedSandbox is not supported for V2 runners')
   }
 
   async createBackup(sandbox: Sandbox, backupSnapshotName: string, registry?: DockerRegistry): Promise<void> {
@@ -441,7 +442,9 @@ export class RunnerAdapterV2 implements RunnerAdapter {
           `Snapshot ${snapshotRef} is in an unknown state (${latestJob.status}) on runner ${this.runner.id}`,
         )
       case JobStatus.FAILED:
-        throw new Error(`Snapshot ${snapshotRef} failed to build on runner ${this.runner.id}`)
+        throw new SnapshotStateError(
+          latestJob.errorMessage || `Snapshot ${snapshotRef} failed on runner ${this.runner.id}`,
+        )
       default:
         throw new Error(
           `Snapshot ${snapshotRef} is in an unknown state (${latestJob.status}) on runner ${this.runner.id}`,
@@ -518,5 +521,15 @@ export class RunnerAdapterV2 implements RunnerAdapter {
     this.logger.debug(
       `Created UPDATE_SANDBOX_NETWORK_SETTINGS job for sandbox ${sandboxId} on runner ${this.runner.id}`,
     )
+  }
+
+  async resizeSandbox(sandboxId: string, cpu?: number, memory?: number, disk?: number): Promise<void> {
+    await this.jobService.createJob(null, JobType.RESIZE_SANDBOX, this.runner.id, ResourceType.SANDBOX, sandboxId, {
+      cpu,
+      memory,
+      disk,
+    })
+
+    this.logger.debug(`Created RESIZE_SANDBOX job for sandbox ${sandboxId} on runner ${this.runner.id}`)
   }
 }

@@ -3,8 +3,10 @@
  * SPDX-License-Identifier: AGPL-3.0
  */
 
+import { RoutePath } from '@/enums/RoutePath'
 import { SandboxState } from '@daytonaio/api-client'
 import { Terminal, MoreVertical, Play, Square, Loader2, Wrench } from 'lucide-react'
+import { generatePath, useNavigate } from 'react-router-dom'
 import { Button } from '../ui/button'
 import {
   DropdownMenu,
@@ -30,9 +32,19 @@ export function SandboxTableActions({
   onCreateSshAccess,
   onRevokeSshAccess,
   onRecover,
+  onScreenRecordings,
 }: SandboxTableActionsProps) {
+  const navigate = useNavigate()
+
   const menuItems = useMemo(() => {
     const items = []
+
+    items.push({
+      key: 'open',
+      label: 'Open',
+      onClick: () => navigate(generatePath(RoutePath.SANDBOX_DETAILS, { sandboxId: sandbox.id })),
+      disabled: isLoading,
+    })
 
     if (writePermitted) {
       if (sandbox.state === SandboxState.STARTED) {
@@ -40,6 +52,12 @@ export function SandboxTableActions({
           key: 'vnc',
           label: 'VNC',
           onClick: () => onVnc(sandbox.id),
+          disabled: isLoading,
+        })
+        items.push({
+          key: 'screen-recordings',
+          label: 'Screen Recordings',
+          onClick: () => onScreenRecordings(sandbox.id),
           disabled: isLoading,
         })
         items.push({
@@ -109,6 +127,7 @@ export function SandboxTableActions({
     sandbox.state,
     sandbox.id,
     isLoading,
+    sandbox.recoverable,
     onStart,
     onStop,
     onDelete,
@@ -117,6 +136,8 @@ export function SandboxTableActions({
     onCreateSshAccess,
     onRevokeSshAccess,
     onRecover,
+    onScreenRecordings,
+    navigate,
   ])
 
   if (!writePermitted && !deletePermitted) {

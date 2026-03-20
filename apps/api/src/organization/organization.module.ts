@@ -24,10 +24,15 @@ import { Volume } from '../sandbox/entities/volume.entity'
 import { RedisLockProvider } from '../sandbox/common/redis-lock.provider'
 import { SnapshotRunner } from '../sandbox/entities/snapshot-runner.entity'
 import { OrganizationUsageService } from './services/organization-usage.service'
+import { DataSource } from 'typeorm'
+import { EventEmitter2 } from '@nestjs/event-emitter'
+import { SandboxRepository } from '../sandbox/repositories/sandbox.repository'
+import { SandboxLookupCacheInvalidationService } from '../sandbox/services/sandbox-lookup-cache-invalidation.service'
 import { RegionQuota } from './entities/region-quota.entity'
 import { RegionModule } from '../region/region.module'
 import { OrganizationRegionController } from './controllers/organization-region.controller'
 import { Region } from '../region/entities/region.entity'
+import { EncryptionModule } from '../encryption/encryption.module'
 
 @Module({
   imports: [
@@ -45,6 +50,7 @@ import { Region } from '../region/entities/region.entity'
       RegionQuota,
       Region,
     ]),
+    EncryptionModule,
   ],
   controllers: [
     OrganizationController,
@@ -60,6 +66,16 @@ import { Region } from '../region/entities/region.entity'
     OrganizationInvitationService,
     OrganizationUsageService,
     RedisLockProvider,
+    SandboxLookupCacheInvalidationService,
+    {
+      provide: SandboxRepository,
+      inject: [DataSource, EventEmitter2, SandboxLookupCacheInvalidationService],
+      useFactory: (
+        dataSource: DataSource,
+        eventEmitter: EventEmitter2,
+        sandboxLookupCacheInvalidationService: SandboxLookupCacheInvalidationService,
+      ) => new SandboxRepository(dataSource, eventEmitter, sandboxLookupCacheInvalidationService),
+    },
   ],
   exports: [
     OrganizationService,

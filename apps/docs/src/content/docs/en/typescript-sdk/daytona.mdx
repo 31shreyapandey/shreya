@@ -36,9 +36,19 @@ const config: DaytonaConfig = {
     target: "us"
 };
 const daytona = new Daytona(config);
+```
 
+```ts
+// Disposes daytona and flushes traces when done
+await using daytona = new Daytona({
+  otelEnabled: true,
+});
 @class
 ```
+
+### Implements
+
+- `AsyncDisposable`
 
 ### Constructors
 
@@ -64,6 +74,24 @@ Creates a new Daytona client instance.
 - `DaytonaError` - When API key is missing
 
 ### Methods
+
+#### \[asyncDispose\]()
+
+```ts
+asyncDispose: Promise<void>
+```
+
+**Returns**:
+
+- `Promise<void>`
+
+##### Implementation of
+
+```ts
+AsyncDisposable.[asyncDispose]
+```
+
+***
 
 #### create()
 
@@ -190,32 +218,6 @@ await daytona.delete(sandbox);
 
 ***
 
-#### findOne()
-
-```ts
-findOne(filter: SandboxFilter): Promise<Sandbox>
-```
-
-Finds a Sandbox by its ID or name or labels.
-
-**Parameters**:
-
-- `filter` _SandboxFilter_ - Filter for Sandboxes
-
-
-**Returns**:
-
-- `Promise<Sandbox>` - First Sandbox that matches the ID or name or labels.
-
-**Example:**
-
-```ts
-const sandbox = await daytona.findOne({ labels: { 'my-label': 'my-value' } });
-console.log(`Sandbox ID: ${sandbox.id}, State: ${sandbox.state}`);
-```
-
-***
-
 #### get()
 
 ```ts
@@ -239,24 +241,6 @@ Gets a Sandbox by its ID or name.
 const sandbox = await daytona.get('my-sandbox-id-or-name');
 console.log(`Sandbox state: ${sandbox.state}`);
 ```
-
-***
-
-#### getProxyToolboxUrl()
-
-```ts
-getProxyToolboxUrl(sandboxId: string, regionId: string): Promise<string>
-```
-
-**Parameters**:
-
-- `sandboxId` _string_
-- `regionId` _string_
-
-
-**Returns**:
-
-- `Promise<string>`
 
 ***
 
@@ -424,6 +408,7 @@ Configuration options for initializing the Daytona client.
 
 **Properties**:
 
+- `\_experimental?` _Record\<string, any\>_ - Configuration for experimental features
 - `apiKey?` _string_ - API key for authentication with the Daytona API
 - `apiUrl?` _string_ - URL of the Daytona API. Defaults to 'https://app.daytona.io/api'
     if not set here and not set in environment variable DAYTONA_API_URL.
@@ -472,14 +457,6 @@ const resources: SandboxResources = {
     disk: 20    // 20GiB disk
 };
 ```
-## SandboxFilter
-
-Filter for Sandboxes.
-
-**Properties**:
-
-- `idOrName?` _string_ - The ID or name of the Sandbox to retrieve
-- `labels?` _Record\<string, string\>_ - Labels to filter Sandboxes
 ## VolumeMount
 
 Represents a volume mount for a Sandbox.

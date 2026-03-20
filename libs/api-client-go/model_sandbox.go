@@ -83,7 +83,9 @@ type Sandbox struct {
 	// The version of the daemon running in the sandbox
 	DaemonVersion *string `json:"daemonVersion,omitempty"`
 	// The runner ID of the sandbox
-	RunnerId             *string `json:"runnerId,omitempty"`
+	RunnerId *string `json:"runnerId,omitempty"`
+	// The toolbox proxy URL for the sandbox
+	ToolboxProxyUrl string `json:"toolboxProxyUrl"`
 	AdditionalProperties map[string]interface{}
 }
 
@@ -93,7 +95,7 @@ type _Sandbox Sandbox
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewSandbox(id string, organizationId string, name string, user string, env map[string]string, labels map[string]string, public bool, networkBlockAll bool, target string, cpu float32, gpu float32, memory float32, disk float32) *Sandbox {
+func NewSandbox(id string, organizationId string, name string, user string, env map[string]string, labels map[string]string, public bool, networkBlockAll bool, target string, cpu float32, gpu float32, memory float32, disk float32, toolboxProxyUrl string) *Sandbox {
 	this := Sandbox{}
 	this.Id = id
 	this.OrganizationId = organizationId
@@ -108,6 +110,7 @@ func NewSandbox(id string, organizationId string, name string, user string, env 
 	this.Gpu = gpu
 	this.Memory = memory
 	this.Disk = disk
+	this.ToolboxProxyUrl = toolboxProxyUrl
 	return &this
 }
 
@@ -1010,8 +1013,32 @@ func (o *Sandbox) SetRunnerId(v string) {
 	o.RunnerId = &v
 }
 
+// GetToolboxProxyUrl returns the ToolboxProxyUrl field value
+func (o *Sandbox) GetToolboxProxyUrl() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.ToolboxProxyUrl
+}
+
+// GetToolboxProxyUrlOk returns a tuple with the ToolboxProxyUrl field value
+// and a boolean to check if the value has been set.
+func (o *Sandbox) GetToolboxProxyUrlOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.ToolboxProxyUrl, true
+}
+
+// SetToolboxProxyUrl sets field value
+func (o *Sandbox) SetToolboxProxyUrl(v string) {
+	o.ToolboxProxyUrl = v
+}
+
 func (o Sandbox) MarshalJSON() ([]byte, error) {
-	toSerialize, err := o.ToMap()
+	toSerialize,err := o.ToMap()
 	if err != nil {
 		return []byte{}, err
 	}
@@ -1087,6 +1114,7 @@ func (o Sandbox) ToMap() (map[string]interface{}, error) {
 	if !IsNil(o.RunnerId) {
 		toSerialize["runnerId"] = o.RunnerId
 	}
+	toSerialize["toolboxProxyUrl"] = o.ToolboxProxyUrl
 
 	for key, value := range o.AdditionalProperties {
 		toSerialize[key] = value
@@ -1113,6 +1141,7 @@ func (o *Sandbox) UnmarshalJSON(data []byte) (err error) {
 		"gpu",
 		"memory",
 		"disk",
+		"toolboxProxyUrl",
 	}
 
 	allProperties := make(map[string]interface{})
@@ -1120,10 +1149,10 @@ func (o *Sandbox) UnmarshalJSON(data []byte) (err error) {
 	err = json.Unmarshal(data, &allProperties)
 
 	if err != nil {
-		return err
+		return err;
 	}
 
-	for _, requiredProperty := range requiredProperties {
+	for _, requiredProperty := range(requiredProperties) {
 		if _, exists := allProperties[requiredProperty]; !exists {
 			return fmt.Errorf("no value given for required property %v", requiredProperty)
 		}
@@ -1173,6 +1202,7 @@ func (o *Sandbox) UnmarshalJSON(data []byte) (err error) {
 		delete(additionalProperties, "class")
 		delete(additionalProperties, "daemonVersion")
 		delete(additionalProperties, "runnerId")
+		delete(additionalProperties, "toolboxProxyUrl")
 		o.AdditionalProperties = additionalProperties
 	}
 
@@ -1214,3 +1244,5 @@ func (v *NullableSandbox) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

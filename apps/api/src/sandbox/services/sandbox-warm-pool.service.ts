@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm'
 import { Cron, CronExpression } from '@nestjs/schedule'
 import { FindOptionsWhere, In, MoreThan, Not, Repository } from 'typeorm'
 import { RedisLockProvider } from '../common/redis-lock.provider'
+import { SandboxRepository } from '../repositories/sandbox.repository'
 import { Sandbox } from '../entities/sandbox.entity'
 import { SANDBOX_WARM_POOL_UNASSIGNED_ORGANIZATION } from '../constants/sandbox.constants'
 import { WarmPool } from '../entities/warm-pool.entity'
@@ -31,7 +32,7 @@ import { LogExecution } from '../../common/decorators/log-execution.decorator'
 import { WithInstrumentation } from '../../common/decorators/otel.decorator'
 
 export type FetchWarmPoolSandboxParams = {
-  snapshot: string
+  snapshot: string | Snapshot
   target: string
   class: SandboxClass
   cpu: number
@@ -51,8 +52,7 @@ export class SandboxWarmPoolService {
   constructor(
     @InjectRepository(WarmPool)
     private readonly warmPoolRepository: Repository<WarmPool>,
-    @InjectRepository(Sandbox)
-    private readonly sandboxRepository: Repository<Sandbox>,
+    private readonly sandboxRepository: SandboxRepository,
     @InjectRepository(Snapshot)
     private readonly snapshotRepository: Repository<Snapshot>,
     @InjectRepository(Runner)
@@ -71,25 +71,32 @@ export class SandboxWarmPoolService {
 
   async fetchWarmPoolSandbox(params: FetchWarmPoolSandboxParams): Promise<Sandbox | null> {
     //  validate snapshot
-    const sandboxSnapshot = params.snapshot || this.configService.get<string>('DEFAULT_SNAPSHOT')
+    let snapshot: Snapshot | null = null
+    if (typeof params.snapshot === 'string') {
+      const sandboxSnapshot = params.snapshot || this.configService.get<string>('DEFAULT_SNAPSHOT')
 
-    const snapshotFilter: FindOptionsWhere<Snapshot>[] = [
-      { organizationId: params.organizationId, name: sandboxSnapshot, state: SnapshotState.ACTIVE },
-      { general: true, name: sandboxSnapshot, state: SnapshotState.ACTIVE },
-    ]
+      const snapshotFilter: FindOptionsWhere<Snapshot>[] = [
+        { organizationId: params.organizationId, name: sandboxSnapshot, state: SnapshotState.ACTIVE },
+        { general: true, name: sandboxSnapshot, state: SnapshotState.ACTIVE },
+      ]
 
-    if (isValidUuid(sandboxSnapshot)) {
-      snapshotFilter.push(
-        { organizationId: params.organizationId, id: sandboxSnapshot, state: SnapshotState.ACTIVE },
-        { general: true, id: sandboxSnapshot, state: SnapshotState.ACTIVE },
-      )
-    }
+      if (isValidUuid(sandboxSnapshot)) {
+        snapshotFilter.push(
+          { organizationId: params.organizationId, id: sandboxSnapshot, state: SnapshotState.ACTIVE },
+          { general: true, id: sandboxSnapshot, state: SnapshotState.ACTIVE },
+        )
+      }
 
-    const snapshot = await this.snapshotRepository.findOne({
-      where: snapshotFilter,
-    })
-    if (!snapshot) {
-      throw new BadRequestError(`Snapshot ${sandboxSnapshot} not found. Did you add it through the Daytona Dashboard?`)
+      snapshot = await this.snapshotRepository.findOne({
+        where: snapshotFilter,
+      })
+      if (!snapshot) {
+        throw new BadRequestError(
+          `Snapshot ${sandboxSnapshot} not found. Did you add it through the Daytona Dashboard?`,
+        )
+      }
+    } else {
+      snapshot = params.snapshot
     }
 
     //  check if sandbox is warm pool
@@ -108,29 +115,37 @@ export class SandboxWarmPoolService {
       },
     })
     if (warmPoolItem) {
-      const unschedulableRunners = await this.runnerRepository.find({
-        where: {
-          region: params.target,
-          unschedulable: true,
-        },
-      })
+      const availabilityScoreThreshold = this.configService.getOrThrow<number>('runnerScore.thresholds.availability')
 
-      const warmPoolSandboxes = await this.sandboxRepository.find({
-        where: {
-          runnerId: Not(In(unschedulableRunners.map((runner) => runner.id))),
-          class: warmPoolItem.class,
-          cpu: warmPoolItem.cpu,
-          mem: warmPoolItem.mem,
-          disk: warmPoolItem.disk,
-          snapshot: snapshot.name, // Use snapshot.name instead of sandboxSnapshot
-          osUser: warmPoolItem.osUser,
-          env: warmPoolItem.env,
+      // Build subquery to find excluded runners (unschedulable OR low score)
+      const excludedRunnersSubquery = this.runnerRepository
+        .createQueryBuilder('runner')
+        .select('runner.id')
+        .where('runner.region = :region')
+        .andWhere('(runner.unschedulable = true OR runner.availabilityScore < :scoreThreshold)')
+
+      const queryBuilder = this.sandboxRepository
+        .createQueryBuilder('sandbox')
+        .where('sandbox.class = :class', { class: warmPoolItem.class })
+        .andWhere('sandbox.cpu = :cpu', { cpu: warmPoolItem.cpu })
+        .andWhere('sandbox.mem = :mem', { mem: warmPoolItem.mem })
+        .andWhere('sandbox.disk = :disk', { disk: warmPoolItem.disk })
+        .andWhere('sandbox.snapshot = :snapshot', { snapshot: snapshot.name })
+        .andWhere('sandbox.osUser = :osUser', { osUser: warmPoolItem.osUser })
+        .andWhere('sandbox.env = :env', { env: warmPoolItem.env })
+        .andWhere('sandbox.organizationId = :organizationId', {
           organizationId: SANDBOX_WARM_POOL_UNASSIGNED_ORGANIZATION,
+        })
+        .andWhere('sandbox.region = :region', { region: warmPoolItem.target })
+        .andWhere('sandbox.state = :state', { state: SandboxState.STARTED })
+        .andWhere(`sandbox.runnerId NOT IN (${excludedRunnersSubquery.getQuery()})`)
+        .setParameters({
           region: warmPoolItem.target,
-          state: SandboxState.STARTED,
-        },
-        take: 10,
-      })
+          scoreThreshold: availabilityScoreThreshold,
+        })
+
+      const candidateLimit = this.configService.getOrThrow<number>('warmPool.candidateLimit')
+      const warmPoolSandboxes = await queryBuilder.orderBy('RANDOM()').take(candidateLimit).getMany()
 
       //  make sure we only release warm pool sandbox once
       let warmPoolSandbox: Sandbox | null = null
@@ -146,6 +161,9 @@ export class SandboxWarmPoolService {
 
       return warmPoolSandbox
     }
+
+    //  no warm pool config exists for this snapshot — cache it so callers can skip
+    await this.redis.set(`warm-pool:skip:${snapshot.id}`, '1', 'EX', 60)
 
     return null
   }

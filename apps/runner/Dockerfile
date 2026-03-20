@@ -1,21 +1,53 @@
 FROM node:22-alpine AS build
 
+ENV CI=true
+
 RUN npm install -g corepack && corepack enable
 
-COPY --from=golang:1.23.5-alpine /usr/local/go/ /usr/local/go/
+COPY --from=golang:1.25.4-alpine /usr/local/go/ /usr/local/go/
 
 ENV PATH="/usr/local/go/bin:${PATH}"
 
+RUN apk add --no-cache git
+
 WORKDIR /daytona
 
-COPY . .
+# Yarn caching layer
+COPY package.json yarn.lock .yarnrc.yml ./
+RUN yarn install --immutable
+
+# Nx config
+COPY nx.json ./
+
+# Go dependency layer (cached unless go.mod/go.sum change)
+COPY go.work go.work.sum ./
+COPY apps/runner/go.mod apps/runner/go.sum apps/runner/
+COPY apps/daemon/go.mod apps/daemon/go.sum apps/daemon/
+COPY libs/common-go/go.mod libs/common-go/go.sum libs/common-go/
+COPY libs/api-client-go/go.mod libs/api-client-go/go.sum libs/api-client-go/
+RUN head -1 go.work > go.work.tmp && printf '\nuse (\n\t./apps/runner\n\t./apps/daemon\n\t./libs/common-go\n\t./libs/api-client-go\n)\n' >> go.work.tmp && mv go.work.tmp go.work
+
+ENV NX_DAEMON=false
+ENV GONOSUMDB=github.com/daytonaio/daytona
+
+RUN go -C apps/runner mod download \
+  && go -C apps/daemon mod download \
+  && go -C libs/common-go mod download \
+  && go -C libs/api-client-go mod download
+
+# Go source
+COPY apps/runner/ apps/runner/
+COPY apps/daemon/ apps/daemon/
+COPY libs/common-go/ libs/common-go/
+COPY libs/api-client-go/ libs/api-client-go/
+COPY libs/computer-use/ libs/computer-use/
+
+# Pre-built computer-use binary and build script
+COPY dist/libs/computer-use-amd64 dist/libs/computer-use-amd64
 
 ARG VERSION=0.0.1
-ENV VERSION=${VERSION}
-
-RUN yarn
-
-RUN SKIP_COMPUTER_USE_BUILD=true yarn nx build runner --configuration=production --nxBail=true
+RUN --mount=type=cache,target=/root/.cache/go-build \
+  SKIP_COMPUTER_USE_BUILD=true VERSION=$VERSION yarn nx build runner --configuration=production --nxBail=true
 
 FROM docker:28.2.2-dind-alpine3.22 AS runner
 
@@ -28,28 +60,6 @@ COPY --from=build /daytona/dist/apps/runner daytona-runner
 RUN chmod +x daytona-runner
 
 RUN mkdir -p /etc/docker && echo '{"insecure-registries": ["registry:6000"]}' > /etc/docker/daemon.json
-
-ENV ENVIRONMENT=development
-
-ENV API_PORT=3003
-ENV DAYTONA_RUNNER_TOKEN=secret_api_token
-
-ENV LOG_FILE_PATH=/home/daytona/runner/runner.log
-
-ENV RESOURCE_LIMITS_DISABLED=true
-
-ENV AWS_ENDPOINT_URL=http://minio:9000
-ENV AWS_REGION=us-east-1
-ENV AWS_ACCESS_KEY_ID=minioadmin
-ENV AWS_SECRET_ACCESS_KEY=minioadmin
-ENV AWS_DEFAULT_BUCKET=daytona
-
-ENV DAYTONA_API_URL=http://api:3000/api
-ENV RUNNER_DOMAIN=localhost
-
-
-ENV SSH_GATEWAY_ENABLE=true
-ENV SSH_PUBLIC_KEY="c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCZ1FEZUtocFdOYVhVNkpSMnJXekc1NlZJeksrcmsrdForcCtVUmwyeWF5cWRnZGg2bnVOL1NtVnJsYmV4MGlrRVZZemdRWUIwWno5M2dqOVhxSkd4WjJiMHVoSDFzNkp2bnhKZVdIK05rbjBNMzRiRjZkeVloZ3o4M0JaTitWcElJdnVDT1pxYWE4VnlRWjhPdjVLMU00enlmQnFCMld3ejcwZEVWUnFaMnVZckd5U0RqUUIrU3hRQ3phY0djb2JRQTFUd2QxdEJvSk5BaVpPWXFSU3d6TmNoTk5hZHlxSHRGdkZRQ0hhNjZWaVBmQ0FVUGt2cEN6ZGh3TmJGdVhGVWkxbnZOWkx4M056RU41M05LWUhZcWU3Y3dXZkI4QjBoRDhDd3hmSDd6T0o1b1RCMnBMVVlsUWpZRDNsN3k4SkFTbDZpYkpuR1A1SWczVXpZWlRIdUdkNzVXWktnNTRJTVROQlFPMWpJdE9HL0orUm1XbzB0YTdpRkF6ZExyL1BmbDdXTVMwbEZhSm9scTdUVmJLUG1JODFTOU04VEgrbXhLbGZ5b2NqZzhwSUdlQUllcEo3dXl1Vk1xT2wxeVVuSFNycDRlVEVlR0k3NlpCOFRoUzhkYnBLUTIvb2RYMHkwc3FSZDI0Y2lGdnM0dnZVaW80NFdYNlNWRG54dXpWRHc1Rzg9IGRheXRvbmFAMDQwNjZiZDIwY2Vi"
 
 HEALTHCHECK CMD [ "curl", "-f", "http://localhost:3003/" ]
 

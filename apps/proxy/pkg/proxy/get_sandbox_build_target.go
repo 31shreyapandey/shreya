@@ -4,13 +4,13 @@
 package proxy
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
 
 	common_errors "github.com/daytonaio/common-go/pkg/errors"
+	"github.com/daytonaio/common-go/pkg/utils"
 	apiclient "github.com/daytonaio/daytona/libs/api-client-go"
 	"github.com/gin-gonic/gin"
 )
@@ -27,7 +27,7 @@ func (p *Proxy) getSandboxBuildTarget(ctx *gin.Context) (*url.URL, map[string]st
 
 	sandbox, err := p.getSandbox(ctx, sandboxId)
 	if err != nil {
-		ctx.Error(common_errors.NewBadRequestError(fmt.Errorf("failed to get sandbox: %w", err)))
+		ctx.Error(err)
 		return nil, nil, fmt.Errorf("failed to get sandbox: %w", err)
 	}
 
@@ -38,7 +38,7 @@ func (p *Proxy) getSandboxBuildTarget(ctx *gin.Context) (*url.URL, map[string]st
 
 	runnerInfo, err := p.getRunnerInfo(ctx, *sandbox.RunnerId)
 	if err != nil {
-		ctx.Error(common_errors.NewBadRequestError(fmt.Errorf("failed to get runner info: %w", err)))
+		ctx.Error(err)
 		return nil, nil, fmt.Errorf("failed to get runner info: %w", err)
 	}
 
@@ -62,11 +62,21 @@ func (p *Proxy) getSandboxBuildTarget(ctx *gin.Context) (*url.URL, map[string]st
 	}, nil
 }
 
-func (p *Proxy) getSandbox(ctx context.Context, sandboxId string) (*apiclient.Sandbox, error) {
-	sandbox, _, err := p.apiclient.SandboxAPI.GetSandbox(ctx, sandboxId).Execute()
-	if err != nil {
-		return nil, err
-	}
+func (p *Proxy) getSandbox(ctx *gin.Context, sandboxId string) (*apiclient.Sandbox, error) {
+	var sandbox *apiclient.Sandbox
+	bearerToken := p.getBearerToken(ctx)
+	apiClient := p.getUserApiClient(ctx, bearerToken)
 
-	return sandbox, nil
+	err := utils.RetryWithExponentialBackoff(ctx, "getSandbox", proxyMaxRetries, proxyBaseDelay, proxyMaxDelay, func() error {
+		s, _, e := apiClient.SandboxAPI.GetSandbox(ctx, sandboxId).Execute()
+		sandbox = s
+		openapiErr := common_errors.ConvertOpenAPIError(e)
+
+		if openapiErr != nil && !common_errors.IsRetryableOpenAPIError(openapiErr) {
+			return &utils.NonRetryableError{Err: openapiErr}
+		}
+
+		return openapiErr
+	})
+	return sandbox, err
 }

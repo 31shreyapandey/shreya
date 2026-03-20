@@ -12,44 +12,55 @@
  * Do not edit the class manually.
  */
 
+
 // May contain unused imports in some cases
 // @ts-ignore
-import type { RunnerHealthMetrics } from './runner-health-metrics'
+import type { RunnerHealthMetrics } from './runner-health-metrics';
+// May contain unused imports in some cases
+// @ts-ignore
+import type { RunnerServiceHealth } from './runner-service-health';
 
 /**
- *
+ * 
  * @export
  * @interface RunnerHealthcheck
  */
 export interface RunnerHealthcheck {
-  /**
-   * Runner metrics
-   * @type {RunnerHealthMetrics}
-   * @memberof RunnerHealthcheck
-   */
-  metrics?: RunnerHealthMetrics
-  /**
-   * Runner domain
-   * @type {string}
-   * @memberof RunnerHealthcheck
-   */
-  domain?: string
-  /**
-   * Runner proxy URL
-   * @type {string}
-   * @memberof RunnerHealthcheck
-   */
-  proxyUrl?: string
-  /**
-   * Runner API URL
-   * @type {string}
-   * @memberof RunnerHealthcheck
-   */
-  apiUrl?: string
-  /**
-   * Runner app version
-   * @type {string}
-   * @memberof RunnerHealthcheck
-   */
-  appVersion: string
+    /**
+     * Runner metrics
+     * @type {RunnerHealthMetrics}
+     * @memberof RunnerHealthcheck
+     */
+    'metrics'?: RunnerHealthMetrics;
+    /**
+     * Health status of individual services on the runner
+     * @type {Array<RunnerServiceHealth>}
+     * @memberof RunnerHealthcheck
+     */
+    'serviceHealth'?: Array<RunnerServiceHealth>;
+    /**
+     * Runner domain
+     * @type {string}
+     * @memberof RunnerHealthcheck
+     */
+    'domain'?: string;
+    /**
+     * Runner proxy URL
+     * @type {string}
+     * @memberof RunnerHealthcheck
+     */
+    'proxyUrl'?: string;
+    /**
+     * Runner API URL
+     * @type {string}
+     * @memberof RunnerHealthcheck
+     */
+    'apiUrl'?: string;
+    /**
+     * Runner app version
+     * @type {string}
+     * @memberof RunnerHealthcheck
+     */
+    'appVersion': string;
 }
+

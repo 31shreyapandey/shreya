@@ -23,7 +23,6 @@ import { OnAsyncEvent } from '../../common/decorators/on-async-event.decorator'
 import { UserEvents } from '../../user/constants/user-events.constant'
 import { UserCreatedEvent } from '../../user/events/user-created.event'
 import { UserDeletedEvent } from '../../user/events/user-deleted.event'
-import { Sandbox } from '../../sandbox/entities/sandbox.entity'
 import { Snapshot } from '../../sandbox/entities/snapshot.entity'
 import { SandboxState } from '../../sandbox/enums/sandbox-state.enum'
 import { EventEmitter2 } from '@nestjs/event-emitter'
@@ -50,6 +49,10 @@ import { Region } from '../../region/entities/region.entity'
 import { RegionQuotaDto } from '../dto/region-quota.dto'
 import { RegionType } from '../../region/enums/region-type.enum'
 import { RegionDto } from '../../region/dto/region.dto'
+import { EncryptionService } from '../../encryption/encryption.service'
+import { OtelConfigDto } from '../dto/otel-config.dto'
+import { sandboxLookupCacheKeyByAuthToken } from '../../sandbox/utils/sandbox-lookup-cache.util'
+import { SandboxRepository } from '../../sandbox/repositories/sandbox.repository'
 
 @Injectable()
 export class OrganizationService implements OnModuleInit, TrackableJobExecutions, OnApplicationShutdown {
@@ -61,8 +64,7 @@ export class OrganizationService implements OnModuleInit, TrackableJobExecutions
   constructor(
     @InjectRepository(Organization)
     private readonly organizationRepository: Repository<Organization>,
-    @InjectRepository(Sandbox)
-    private readonly sandboxRepository: Repository<Sandbox>,
+    private readonly sandboxRepository: SandboxRepository,
     @InjectRepository(Snapshot)
     private readonly snapshotRepository: Repository<Snapshot>,
     private readonly eventEmitter: EventEmitter2,
@@ -73,6 +75,7 @@ export class OrganizationService implements OnModuleInit, TrackableJobExecutions
     @InjectRepository(Region)
     private readonly regionRepository: Repository<Region>,
     private readonly regionService: RegionService,
+    private readonly encryptionService: EncryptionService,
   ) {
     this.defaultOrganizationQuota = this.configService.getOrThrow('defaultOrganizationQuota')
     this.defaultSandboxLimitedNetworkEgress = this.configService.getOrThrow(
@@ -135,6 +138,22 @@ export class OrganizationService implements OnModuleInit, TrackableJobExecutions
     return this.organizationRepository.findOne({ where: { id: sandbox.organizationId } })
   }
 
+  async findBySandboxAuthToken(authToken: string): Promise<Organization | null> {
+    const sandbox = await this.sandboxRepository.findOne({
+      where: { authToken },
+      cache: {
+        id: sandboxLookupCacheKeyByAuthToken({ authToken }),
+        milliseconds: 10_000,
+      },
+    })
+
+    if (!sandbox) {
+      return null
+    }
+
+    return this.organizationRepository.findOne({ where: { id: sandbox.organizationId } })
+  }
+
   async findPersonal(userId: string): Promise<Organization> {
     return this.findPersonalWithEntityManager(this.organizationRepository.manager, userId)
   }
@@ -165,6 +184,14 @@ export class OrganizationService implements OnModuleInit, TrackableJobExecutions
     organization.sandboxCreateRateLimit = updateDto.sandboxCreateRateLimit ?? organization.sandboxCreateRateLimit
     organization.sandboxLifecycleRateLimit =
       updateDto.sandboxLifecycleRateLimit ?? organization.sandboxLifecycleRateLimit
+    organization.authenticatedRateLimitTtlSeconds =
+      updateDto.authenticatedRateLimitTtlSeconds ?? organization.authenticatedRateLimitTtlSeconds
+    organization.sandboxCreateRateLimitTtlSeconds =
+      updateDto.sandboxCreateRateLimitTtlSeconds ?? organization.sandboxCreateRateLimitTtlSeconds
+    organization.sandboxLifecycleRateLimitTtlSeconds =
+      updateDto.sandboxLifecycleRateLimitTtlSeconds ?? organization.sandboxLifecycleRateLimitTtlSeconds
+    organization.snapshotDeactivationTimeoutMinutes =
+      updateDto.snapshotDeactivationTimeoutMinutes ?? organization.snapshotDeactivationTimeoutMinutes
 
     await this.organizationRepository.save(organization)
   }
@@ -333,6 +360,97 @@ export class OrganizationService implements OnModuleInit, TrackableJobExecutions
     }
 
     await this.organizationRepository.save(organization)
+  }
+
+  async updateExperimentalConfig(
+    organizationId: string,
+    experimentalConfig: Record<string, any> | null,
+  ): Promise<void> {
+    const organization = await this.organizationRepository.findOne({ where: { id: organizationId } })
+    if (!organization) {
+      throw new NotFoundException(`Organization with ID ${organizationId} not found`)
+    }
+
+    const existingConfig = organization._experimentalConfig
+
+    organization._experimentalConfig = await this.validatedExperimentalConfig(experimentalConfig)
+
+    // If experimentalConfig contains redacted fields, we need to preserve the existing encrypted values
+    if (experimentalConfig && experimentalConfig.otel && experimentalConfig.otel.headers) {
+      if (existingConfig && existingConfig.otel && existingConfig.otel.headers) {
+        for (const [key, value] of Object.entries(experimentalConfig.otel.headers)) {
+          if (
+            typeof value === 'string' &&
+            value.match(/\*/g)?.length === value.length &&
+            existingConfig.otel.headers[key]
+          ) {
+            organization._experimentalConfig.otel.headers[key] = existingConfig.otel.headers[key]
+          }
+        }
+      }
+    }
+
+    await this.organizationRepository.save(organization)
+  }
+
+  async getOtelConfigBySandboxAuthToken(sandboxAuthToken: string): Promise<OtelConfigDto | null> {
+    const organization = await this.findBySandboxAuthToken(sandboxAuthToken)
+    if (!organization) {
+      return null
+    }
+
+    if (!organization._experimentalConfig || !organization._experimentalConfig.otel) {
+      return null
+    }
+
+    const otelConfig = organization._experimentalConfig.otel
+    const decryptedHeaders: Record<string, string> = {}
+    if (otelConfig.headers && typeof otelConfig.headers === 'object') {
+      for (const [key, value] of Object.entries(otelConfig.headers)) {
+        if (typeof key === 'string' && key.trim() && typeof value === 'string' && value.trim()) {
+          decryptedHeaders[key] = await this.encryptionService.decrypt(value)
+        }
+      }
+    }
+
+    return {
+      endpoint: otelConfig.endpoint,
+      headers: Object.keys(decryptedHeaders).length > 0 ? decryptedHeaders : undefined,
+    }
+  }
+
+  private async validatedExperimentalConfig(
+    experimentalConfig: Record<string, any> | null,
+  ): Promise<Record<string, any> | null> {
+    if (!experimentalConfig) {
+      return null
+    }
+
+    if (!experimentalConfig.otel) {
+      return experimentalConfig
+    }
+
+    const otelConfig = { ...experimentalConfig.otel }
+    if (typeof otelConfig.endpoint !== 'string' || !otelConfig.endpoint.trim()) {
+      throw new ForbiddenException('Invalid OpenTelemetry endpoint')
+    }
+
+    if (otelConfig.headers && typeof otelConfig.headers === 'object') {
+      const headers: Record<string, string> = {}
+      for (const [key, value] of Object.entries(otelConfig.headers)) {
+        if (typeof key === 'string' && key.trim() && typeof value === 'string' && value.trim()) {
+          headers[key] = await this.encryptionService.encrypt(value)
+        }
+      }
+      otelConfig.headers = headers
+    } else {
+      otelConfig.headers = {}
+    }
+
+    return {
+      ...experimentalConfig,
+      otel: otelConfig,
+    }
   }
 
   private async createWithEntityManager(

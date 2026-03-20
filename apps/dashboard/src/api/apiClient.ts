@@ -4,23 +4,29 @@
  */
 
 import { BillingApiClient } from '@/billing-api/billingApiClient'
+import { DashboardConfig } from '@/types/DashboardConfig'
+import {
+  Configuration as AnalyticsConfiguration,
+  TelemetryApi as AnalyticsTelemetryApi,
+  UsageApi as AnalyticsUsageApi,
+} from '@daytonaio/analytics-api-client'
 import {
   ApiKeysApi,
+  AuditApi,
   Configuration,
   DockerRegistryApi,
-  SnapshotsApi,
   OrganizationsApi,
-  UsersApi,
-  VolumesApi,
-  SandboxApi,
-  ToolboxApi,
-  AuditApi,
   RegionsApi,
   RunnersApi,
+  SandboxApi,
+  SnapshotsApi,
+  ToolboxApi,
+  UsersApi,
+  VolumesApi,
+  WebhooksApi,
 } from '@daytonaio/api-client'
 import axios, { AxiosError } from 'axios'
 import { DaytonaError } from './errors'
-import { DashboardConfig } from '@/types/DashboardConfig'
 
 export class ApiClient {
   private config: Configuration
@@ -36,6 +42,9 @@ export class ApiClient {
   private _auditApi: AuditApi
   private _regionsApi: RegionsApi
   private _runnersApi: RunnersApi
+  private _webhooksApi: WebhooksApi
+  private _analyticsUsageApi: AnalyticsUsageApi | null
+  private _analyticsTelemetryApi: AnalyticsTelemetryApi | null
 
   constructor(config: DashboardConfig, accessToken: string) {
     this.config = new Configuration({
@@ -57,7 +66,7 @@ export class ApiClient {
           errorMessage = error.response?.data?.message || error.response?.data || error.message || String(error)
         }
 
-        throw DaytonaError.fromString(String(errorMessage))
+        throw DaytonaError.fromString(String(errorMessage), { cause: error instanceof Error ? error : undefined })
       },
     )
 
@@ -74,6 +83,24 @@ export class ApiClient {
     this._auditApi = new AuditApi(this.config, undefined, axiosInstance)
     this._regionsApi = new RegionsApi(this.config, undefined, axiosInstance)
     this._runnersApi = new RunnersApi(this.config, undefined, axiosInstance)
+    this._webhooksApi = new WebhooksApi(this.config, undefined, axiosInstance)
+
+    if (config.analyticsApiUrl) {
+      const analyticsConfig = new AnalyticsConfiguration({
+        basePath: config.analyticsApiUrl,
+        accessToken: accessToken,
+        baseOptions: {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      })
+      this._analyticsUsageApi = new AnalyticsUsageApi(analyticsConfig, undefined, axiosInstance)
+      this._analyticsTelemetryApi = new AnalyticsTelemetryApi(analyticsConfig, undefined, axiosInstance)
+    } else {
+      this._analyticsUsageApi = null
+      this._analyticsTelemetryApi = null
+    }
   }
 
   public setAccessToken(accessToken: string) {
@@ -126,6 +153,18 @@ export class ApiClient {
 
   public get runnersApi() {
     return this._runnersApi
+  }
+
+  public get webhooksApi() {
+    return this._webhooksApi
+  }
+
+  public get analyticsUsageApi() {
+    return this._analyticsUsageApi
+  }
+
+  public get analyticsTelemetryApi() {
+    return this._analyticsTelemetryApi
   }
 
   public async webhookRequest(method: string, url: string, data?: any) {

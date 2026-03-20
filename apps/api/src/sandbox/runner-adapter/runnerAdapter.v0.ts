@@ -16,6 +16,7 @@ import {
   StartSandboxResponse,
   SnapshotDigestResponse,
 } from './runnerAdapter'
+import { SnapshotStateError } from '../errors/snapshot-state-error'
 import { Runner } from '../entities/runner.entity'
 import {
   Configuration,
@@ -37,6 +38,7 @@ import { BuildInfo } from '../entities/build-info.entity'
 import { DockerRegistry } from '../../docker-registry/entities/docker-registry.entity'
 import { SandboxState } from '../enums/sandbox-state.enum'
 import { BackupState } from '../enums/backup-state.enum'
+import { RunnerApiError } from '../errors/runner-api-error'
 
 const isDebugEnabled = process.env.DEBUG === 'true'
 
@@ -139,8 +141,10 @@ export class RunnerAdapterV0 implements RunnerAdapter {
       },
       (error) => {
         const errorMessage = error.response?.data?.message || error.response?.data || error.message || String(error)
+        const statusCode = error.response?.data?.statusCode || error.response?.status || error.status
+        const code = error.response?.data?.code || (error as any).code || (error as any).cause?.code || ''
 
-        throw new Error(String(errorMessage))
+        throw new RunnerApiError(String(errorMessage), statusCode, code)
       },
     )
 
@@ -164,6 +168,7 @@ export class RunnerAdapterV0 implements RunnerAdapter {
   async runnerInfo(signal?: AbortSignal): Promise<RunnerInfo> {
     const response = await this.runnerApiClient.runnerInfo({ signal })
     return {
+      serviceHealth: response.data.serviceHealth,
       metrics: response.data.metrics,
       appVersion: response.data.appVersion,
     }
@@ -184,6 +189,8 @@ export class RunnerAdapterV0 implements RunnerAdapter {
     registry?: DockerRegistry,
     entrypoint?: string[],
     metadata?: { [key: string]: string },
+    otelEndpoint?: string,
+    skipStart?: boolean,
   ): Promise<StartSandboxResponse | undefined> {
     const createSandboxDto: CreateSandboxDTO = {
       id: sandbox.id,
@@ -212,6 +219,11 @@ export class RunnerAdapterV0 implements RunnerAdapter {
       networkBlockAll: sandbox.networkBlockAll,
       networkAllowList: sandbox.networkAllowList,
       metadata: metadata,
+      authToken: sandbox.authToken,
+      otelEndpoint,
+      skipStart: skipStart,
+      organizationId: sandbox.organizationId,
+      regionId: sandbox.region,
     }
 
     const response = await this.sandboxApiClient.create(createSandboxDto)
@@ -227,9 +239,10 @@ export class RunnerAdapterV0 implements RunnerAdapter {
 
   async startSandbox(
     sandboxId: string,
+    authToken: string,
     metadata?: { [key: string]: string },
   ): Promise<StartSandboxResponse | undefined> {
-    const response = await this.sandboxApiClient.start(sandboxId, metadata)
+    const response = await this.sandboxApiClient.start(sandboxId, authToken, metadata)
 
     if (!response?.data?.daemonVersion) {
       return undefined
@@ -246,10 +259,6 @@ export class RunnerAdapterV0 implements RunnerAdapter {
 
   async destroySandbox(sandboxId: string): Promise<void> {
     await this.sandboxApiClient.destroy(sandboxId)
-  }
-
-  async removeDestroyedSandbox(sandboxId: string): Promise<void> {
-    await this.sandboxApiClient.removeDestroyed(sandboxId)
   }
 
   async createBackup(sandbox: Sandbox, backupSnapshotName: string, registry?: DockerRegistry): Promise<void> {
@@ -353,13 +362,21 @@ export class RunnerAdapterV0 implements RunnerAdapter {
   }
 
   async getSnapshotInfo(snapshotName: string): Promise<RunnerSnapshotInfo> {
-    const response = await this.snapshotApiClient.getSnapshotInfo(snapshotName)
-    return {
-      name: response.data.name || '',
-      sizeGB: response.data.sizeGB,
-      entrypoint: response.data.entrypoint,
-      cmd: response.data.cmd,
-      hash: response.data.hash,
+    try {
+      const response = await this.snapshotApiClient.getSnapshotInfo(snapshotName)
+
+      return {
+        name: response.data.name || '',
+        sizeGB: response.data.sizeGB,
+        entrypoint: response.data.entrypoint,
+        cmd: response.data.cmd,
+        hash: response.data.hash,
+      }
+    } catch (err) {
+      if (err instanceof RunnerApiError && err.statusCode === 422) {
+        throw new SnapshotStateError(err.message)
+      }
+      throw err
     }
   }
 
@@ -418,5 +435,9 @@ export class RunnerAdapterV0 implements RunnerAdapter {
       backupErrorReason: sandbox.backupErrorReason,
     }
     await this.sandboxApiClient.recover(sandbox.id, recoverSandboxDTO)
+  }
+
+  async resizeSandbox(sandboxId: string, cpu?: number, memory?: number, disk?: number): Promise<void> {
+    await this.sandboxApiClient.resize(sandboxId, { cpu, memory, disk })
   }
 }

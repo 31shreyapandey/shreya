@@ -33,13 +33,13 @@ import {
 import { SystemActionGuard } from '../../auth/system-action.guard'
 import { RequiredApiRole } from '../../common/decorators/required-role.decorator'
 import { SystemRole } from '../../user/enums/system-role.enum'
-import { ProxyGuard } from '../../auth/proxy.guard'
+import { ProxyGuard } from '../guards/proxy.guard'
 import { RunnerDto } from '../dto/runner.dto'
 import { RunnerSnapshotDto } from '../dto/runner-snapshot.dto'
 import { Audit, TypedRequest } from '../../audit/decorators/audit.decorator'
 import { AuditAction } from '../../audit/enums/audit-action.enum'
 import { AuditTarget } from '../../audit/enums/audit-target.enum'
-import { SshGatewayGuard } from '../../auth/ssh-gateway.guard'
+import { SshGatewayGuard } from '../guards/ssh-gateway.guard'
 import { CombinedAuthGuard } from '../../auth/combined-auth.guard'
 import { OrGuard } from '../../auth/or.guard'
 import { RunnerAuthGuard } from '../../auth/runner-auth.guard'
@@ -47,6 +47,7 @@ import { RunnerContextDecorator } from '../../common/decorators/runner-context.d
 import { RunnerContext } from '../../common/interfaces/runner-context.interface'
 import { AuthenticatedRateLimitGuard } from '../../common/guards/authenticated-rate-limit.guard'
 import { RunnerAccessGuard } from '../guards/runner-access.guard'
+import { RegionRunnerAccessGuard } from '../guards/region-runner-access.guard'
 import { CustomHeaders } from '../../common/constants/header.constants'
 import { AuthContext } from '../../common/decorators/auth-context.decorator'
 import { OrganizationAuthContext } from '../../common/interfaces/auth-context.interface'
@@ -54,7 +55,7 @@ import { RequiredOrganizationResourcePermissions } from '../../organization/deco
 import { OrganizationResourcePermission } from '../../organization/enums/organization-resource-permission.enum'
 import { OrganizationResourceActionGuard } from '../../organization/guards/organization-resource-action.guard'
 import { CreateRunnerResponseDto } from '../dto/create-runner-response.dto'
-import { SandboxAccessGuard } from '../guards/sandbox-access.guard'
+import { RegionSandboxAccessGuard } from '../guards/region-sandbox-access.guard'
 import { RunnerFullDto } from '../dto/runner-full.dto'
 import { RegionType } from '../../region/enums/region-type.enum'
 import { RegionService } from '../../region/services/region.service'
@@ -157,12 +158,7 @@ export class RunnerController {
   @UseGuards(OrganizationResourceActionGuard, RunnerAccessGuard)
   @RequiredOrganizationResourcePermissions([OrganizationResourcePermission.READ_RUNNERS])
   async getRunnerById(@Param('id', ParseUUIDPipe) id: string): Promise<RunnerDto> {
-    const runner = await this.runnerService.findOne(id)
-
-    if (!runner) {
-      throw new NotFoundException('Runner not found')
-    }
-
+    const runner = await this.runnerService.findOneOrFail(id)
     return RunnerDto.fromRunner(runner)
   }
 
@@ -181,15 +177,10 @@ export class RunnerController {
     description: 'Runner ID',
     type: String,
   })
-  @UseGuards(OrGuard([SystemActionGuard, ProxyGuard, SshGatewayGuard, RunnerAccessGuard]))
-  @RequiredApiRole([SystemRole.ADMIN, 'proxy', 'ssh-gateway', 'region-proxy', 'region-ssh-gateway'])
+  @UseGuards(OrGuard([SystemActionGuard, ProxyGuard, SshGatewayGuard, RegionRunnerAccessGuard]))
+  @RequiredApiRole([SystemRole.ADMIN])
   async getRunnerByIdFull(@Param('id', ParseUUIDPipe) id: string): Promise<RunnerFullDto> {
-    const runner = await this.runnerService.findOne(id)
-
-    if (!runner) {
-      throw new NotFoundException('Runner not found')
-    }
-
+    const runner = await this.runnerService.findOneOrFail(id)
     return RunnerFullDto.fromRunner(runner)
   }
 
@@ -248,6 +239,43 @@ export class RunnerController {
     return RunnerDto.fromRunner(updatedRunner)
   }
 
+  @Patch(':id/draining')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Update runner draining status',
+    operationId: 'updateRunnerDraining',
+  })
+  @ApiResponse({
+    status: 200,
+    type: RunnerDto,
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Runner ID',
+    type: String,
+  })
+  @Audit({
+    action: AuditAction.UPDATE_DRAINING,
+    targetType: AuditTarget.RUNNER,
+    targetIdFromRequest: (req) => req.params.id,
+    requestMetadata: {
+      body: (req: TypedRequest<{ draining: boolean }>) => ({
+        draining: req.body?.draining,
+      }),
+    },
+  })
+  @ApiHeader(CustomHeaders.ORGANIZATION_ID)
+  @UseGuards(OrganizationResourceActionGuard, RunnerAccessGuard)
+  @RequiredOrganizationResourcePermissions([OrganizationResourcePermission.WRITE_RUNNERS])
+  @RequireFlagsEnabled({ flags: [{ flagKey: FeatureFlags.ORGANIZATION_INFRASTRUCTURE, defaultValue: false }] })
+  async updateDrainingStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('draining') draining: boolean,
+  ): Promise<RunnerDto> {
+    const updatedRunner = await this.runnerService.updateDrainingStatus(id, draining)
+    return RunnerDto.fromRunner(updatedRunner)
+  }
+
   @Delete(':id')
   @HttpCode(204)
   @ApiOperation({
@@ -285,9 +313,9 @@ export class RunnerController {
     status: 200,
     type: RunnerFullDto,
   })
-  @UseGuards(OrGuard([SystemActionGuard, ProxyGuard, SshGatewayGuard, SandboxAccessGuard]))
-  @RequiredApiRole([SystemRole.ADMIN, 'proxy', 'ssh-gateway', 'region-proxy', 'region-ssh-gateway'])
-  async getRunnerBySandboxId(@Param('sandboxId', ParseUUIDPipe) sandboxId: string): Promise<RunnerFullDto> {
+  @UseGuards(OrGuard([SystemActionGuard, ProxyGuard, SshGatewayGuard, RegionSandboxAccessGuard]))
+  @RequiredApiRole([SystemRole.ADMIN])
+  async getRunnerBySandboxId(@Param('sandboxId') sandboxId: string): Promise<RunnerFullDto> {
     const runner = await this.runnerService.findBySandboxId(sandboxId)
 
     if (!runner) {
@@ -339,6 +367,7 @@ export class RunnerController {
       healthcheck.domain,
       healthcheck.apiUrl,
       healthcheck.proxyUrl,
+      healthcheck.serviceHealth,
       healthcheck.metrics,
       healthcheck.appVersion,
     )

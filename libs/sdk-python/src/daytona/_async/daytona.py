@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
+import os
 import warnings
 from copy import deepcopy
 from importlib.metadata import version
@@ -26,11 +26,19 @@ from daytona_api_client_async import (
 from daytona_api_client_async import VolumesApi as VolumesApi
 from daytona_toolbox_api_client_async import ApiClient as ToolboxApiClient
 from environs import Env
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.semconv.attributes import service_attributes
 
 from .._utils.enum import to_enum
 from .._utils.errors import intercept_errors
+from .._utils.otel_decorator import with_instrumentation
 from .._utils.stream import process_streaming_response
-from .._utils.timeout import with_timeout
+from .._utils.timeout import http_timeout, with_timeout
 from ..code_toolbox.sandbox_js_code_toolbox import SandboxJsCodeToolbox
 from ..code_toolbox.sandbox_python_code_toolbox import SandboxPythonCodeToolbox
 from ..code_toolbox.sandbox_ts_code_toolbox import SandboxTsCodeToolbox
@@ -79,6 +87,18 @@ class AsyncDaytona:
         finally:
             await daytona.close()
         ```
+
+        Using OpenTelemetry tracing:
+        ```python
+        config = DaytonaConfig(
+            api_key="your-api-key",
+            experimental={"otelEnabled": True}
+        )
+        async with AsyncDaytona(config) as daytona:
+            sandbox = await daytona.create()
+            # All SDK operations will be traced
+        # OpenTelemetry traces are flushed on close
+        ```
     """
 
     _api_key: str | None = None
@@ -86,6 +106,7 @@ class AsyncDaytona:
     _organization_id: str | None = None
     _api_url: str
     _target: str | None = None
+    _tracer_provider: TracerProvider | None = None
 
     def __init__(self, config: DaytonaConfig | None = None):
         """Initializes Daytona instance with optional configuration.
@@ -198,9 +219,6 @@ class AsyncDaytona:
         self._sandbox_api: SandboxApi = SandboxApi(self._api_client)
         self._object_storage_api: ObjectStorageApi = ObjectStorageApi(self._api_client)
         self._config_api: ConfigApi = ConfigApi(self._api_client)
-        # Toolbox proxy cache per region
-        self._proxy_toolbox_url_tasks: dict[str, asyncio.Task[str]] = {}
-        self._proxy_toolbox_url_lock: asyncio.Lock = asyncio.Lock()
         self._toolbox_api_client: ToolboxApiClient = self._clone_api_client_to_toolbox_api_client()
 
         # Initialize services
@@ -210,6 +228,38 @@ class AsyncDaytona:
             self._object_storage_api,
             self._target,
         )
+
+        # Initialize OpenTelemetry if enabled
+        otel_enabled = (config and config._experimental and config._experimental.get("otelEnabled")) or os.environ.get(
+            "DAYTONA_EXPERIMENTAL_OTEL_ENABLED"
+        ) == "true"
+        if otel_enabled:
+            self._init_otel(sdk_version)
+
+    def _init_otel(self, sdk_version: str):
+        """Initialize OpenTelemetry tracing.
+
+        Args:
+            sdk_version: The SDK version to include in resource attributes
+        """
+        # Create resource with SDK version
+        resource = Resource.create(
+            {
+                service_attributes.SERVICE_VERSION: sdk_version,
+                service_attributes.SERVICE_NAME: "daytona-python-sdk",
+            }
+        )
+
+        # Create and configure tracer provider
+        self._tracer_provider = TracerProvider(resource=resource)
+
+        otlp_exporter = OTLPSpanExporter()
+        self._tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+
+        AioHttpClientInstrumentor().instrument()
+
+        # Set the global tracer provider
+        trace.set_tracer_provider(self._tracer_provider)
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -248,6 +298,11 @@ class AsyncDaytona:
             # Automatically closed
             ```
         """
+
+        # Shutdown OpenTelemetry if it was initialized
+        if self._tracer_provider is not None:
+            self._tracer_provider.shutdown()
+
         # Close the main API client
         if hasattr(self, "_api_client") and self._api_client:
             await self._api_client.close()
@@ -356,6 +411,8 @@ class AsyncDaytona:
         """
 
     @intercept_errors(message_prefix="Failed to create sandbox: ")
+    @with_timeout()
+    @with_instrumentation()
     async def create(
         self,
         params: CreateSandboxFromSnapshotParams | CreateSandboxFromImageParams | None = None,
@@ -371,11 +428,6 @@ class AsyncDaytona:
 
         return await self._create(params, timeout=timeout, on_snapshot_create_logs=on_snapshot_create_logs)
 
-    @with_timeout(
-        error_message=lambda self, timeout: (
-            f"Failed to create and start sandbox within {timeout} seconds timeout period."
-        )
-    )
     async def _create(
         self,
         params: CreateSandboxFromSnapshotParams | CreateSandboxFromImageParams,
@@ -388,8 +440,6 @@ class AsyncDaytona:
         if timeout and timeout < 0:
             raise DaytonaError("Timeout must be a non-negative number")
 
-        start_time = time.time()
-
         if params.auto_stop_interval is not None and params.auto_stop_interval < 0:
             raise DaytonaError("auto_stop_interval must be a non-negative integer")
 
@@ -401,7 +451,8 @@ class AsyncDaytona:
         volumes = []
         if params.volumes:
             volumes = [
-                SandboxVolume(volume_id=volume.volume_id, mount_path=volume.mount_path) for volume in params.volumes
+                SandboxVolume(volume_id=volume.volume_id, mount_path=volume.mount_path, subpath=volume.subpath)
+                for volume in params.volumes
             ]
 
         # Create sandbox using dictionary
@@ -443,7 +494,7 @@ class AsyncDaytona:
                 sandbox_data.disk = params.resources.disk
                 sandbox_data.gpu = params.resources.gpu
 
-        response = await self._sandbox_api.create_sandbox(sandbox_data, _request_timeout=timeout or None)
+        response = await self._sandbox_api.create_sandbox(sandbox_data, _request_timeout=http_timeout(timeout))
 
         if response.state == SandboxState.PENDING_BUILD and on_snapshot_create_logs:
             build_logs_url = (await self._sandbox_api.get_build_logs_url(response.id)).url
@@ -460,13 +511,6 @@ class AsyncDaytona:
                 ]
 
             while response_ref["response"].state == SandboxState.PENDING_BUILD:
-                if timeout:
-                    elapsed = time.time() - start_time
-                    if elapsed > timeout:
-                        raise DaytonaError(
-                            f"Sandbox build has been pending for more than {timeout} seconds. "
-                            + "Please check the sandbox state again later."
-                        )
                 await asyncio.sleep(1)
                 response_ref["response"] = await self._sandbox_api.get_sandbox(response_ref["response"].id)
 
@@ -483,17 +527,12 @@ class AsyncDaytona:
             self._toolbox_api_client,
             self._sandbox_api,
             code_toolbox,
-            self._get_proxy_toolbox_url,
         )
 
         if sandbox.state != SandboxState.STARTED:
-            # Wait for sandbox to start
-            try:
-                time_elapsed = time.time() - start_time
-                await sandbox.wait_for_sandbox_start(timeout=max(0.001, timeout - time_elapsed) if timeout else timeout)
-            finally:
-                # If not Daytona SaaS, we don't need to handle pulling image state
-                pass
+            # Wait for sandbox to start. This method already handles a timeout,
+            # so we don't need to pass one to internal methods.
+            await sandbox.wait_for_sandbox_start(timeout=0)
 
         return sandbox
 
@@ -528,6 +567,7 @@ class AsyncDaytona:
         except KeyError as e:
             raise DaytonaError(f"Unsupported language: {language}") from e
 
+    @with_instrumentation()
     async def delete(self, sandbox: AsyncSandbox, timeout: float = 60) -> None:
         """Deletes a Sandbox.
 
@@ -549,6 +589,7 @@ class AsyncDaytona:
         _ = await sandbox.delete(timeout)
 
     @intercept_errors(message_prefix="Failed to get sandbox: ")
+    @with_instrumentation()
     async def get(self, sandbox_id_or_name: str) -> AsyncSandbox:
         """Gets a Sandbox by its ID or name.
 
@@ -580,39 +621,10 @@ class AsyncDaytona:
             self._toolbox_api_client,
             self._sandbox_api,
             code_toolbox,
-            self._get_proxy_toolbox_url,
         )
 
-    @intercept_errors(message_prefix="Failed to find sandbox: ")
-    async def find_one(
-        self, sandbox_id_or_name: str | None = None, labels: dict[str, str] | None = None
-    ) -> AsyncSandbox:
-        """Finds a Sandbox by its ID or name or labels.
-
-        Args:
-            sandbox_id_or_name (str | None): The ID or name of the Sandbox to retrieve.
-            labels (dict[str, str] | None): Labels to filter Sandboxes.
-
-        Returns:
-            Sandbox: First Sandbox that matches the ID or name or labels.
-
-        Raises:
-            DaytonaError: If no Sandbox is found.
-
-        Example:
-            ```python
-            sandbox = await daytona.find_one(labels={"my-label": "my-value"})
-            print(f"Sandbox ID: {sandbox.id} State: {sandbox.state}")
-            ```
-        """
-        if sandbox_id_or_name:
-            return await self.get(sandbox_id_or_name)
-        sandboxes = await self.list(labels, page=1, limit=1)
-        if len(sandboxes.items) == 0:
-            raise DaytonaError(f"No sandbox found with labels {labels}")
-        return sandboxes.items[0]
-
     @intercept_errors(message_prefix="Failed to list sandboxes: ")
+    @with_instrumentation()
     async def list(
         self, labels: dict[str, str] | None = None, page: int | None = None, limit: int | None = None
     ) -> AsyncPaginatedSandboxes:
@@ -648,7 +660,6 @@ class AsyncDaytona:
                     self._toolbox_api_client,
                     self._sandbox_api,
                     self._get_code_toolbox(self._validate_language_label(sandbox.labels.get("code-toolbox-language"))),
-                    self._get_proxy_toolbox_url,
                 )
                 for sandbox in response.items
             ],
@@ -677,6 +688,7 @@ class AsyncDaytona:
             raise DaytonaError(f"Invalid code-toolbox-language: {language}")
         return enum_language
 
+    @with_instrumentation()
     async def start(self, sandbox: AsyncSandbox, timeout: float = 60) -> None:
         """Starts a Sandbox and waits for it to be ready.
 
@@ -690,6 +702,7 @@ class AsyncDaytona:
         """
         await sandbox.start(timeout)
 
+    @with_instrumentation()
     async def stop(self, sandbox: AsyncSandbox, timeout: float = 60) -> None:
         """Stops a Sandbox and waits for it to be stopped.
 
@@ -716,20 +729,3 @@ class AsyncDaytona:
         toolbox_api_client.default_headers = deepcopy(cast(dict[str, str], self._api_client.default_headers))
 
         return toolbox_api_client
-
-    async def _get_proxy_toolbox_url(self, sandbox_id: str, region_id: str) -> str:
-        if self._proxy_toolbox_url_tasks.get(region_id) is not None:
-            return await self._proxy_toolbox_url_tasks[region_id]
-
-        async with self._proxy_toolbox_url_lock:
-            # Double-check: another coroutine might have created the task
-            if self._proxy_toolbox_url_tasks.get(region_id) is None:
-
-                async def _fetch():
-                    response = await self._sandbox_api.get_toolbox_proxy_url(sandbox_id)
-                    return response.url
-
-                self._proxy_toolbox_url_tasks[region_id] = asyncio.create_task(_fetch())
-
-        # All coroutines that made it here can now await the same task in parallel
-        return await self._proxy_toolbox_url_tasks[region_id]

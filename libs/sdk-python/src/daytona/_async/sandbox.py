@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import time
-from collections.abc import Awaitable, Callable
-from typing import cast
 
 from daytona_api_client_async import BuildInfo
 from daytona_api_client_async import PaginatedSandboxes as PaginatedSandboxesDto
-from daytona_api_client_async import PortPreviewUrl
+from daytona_api_client_async import PortPreviewUrl, ResizeSandbox
 from daytona_api_client_async import Sandbox as SandboxDto
 from daytona_api_client_async import (
     SandboxApi,
@@ -34,11 +31,13 @@ from deprecated import deprecated
 from pydantic import ConfigDict, PrivateAttr
 
 from .._utils.errors import intercept_errors
-from .._utils.timeout import with_timeout
+from .._utils.otel_decorator import with_instrumentation
+from .._utils.timeout import http_timeout, with_timeout
 from ..common.errors import DaytonaError, DaytonaNotFoundError
 from ..common.lsp_server import LspLanguageId, LspLanguageIdLiteral
 from ..common.protocols import SandboxCodeToolbox
-from ..internal.toolbox_api_client_proxy import AsyncToolboxApiClientProxyLazyBaseUrl
+from ..common.sandbox import Resources
+from ..internal.toolbox_api_client_proxy import ToolboxApiClientProxy
 from .code_interpreter import AsyncCodeInterpreter
 from .computer_use import AsyncComputerUse
 from .filesystem import AsyncFileSystem
@@ -101,7 +100,6 @@ class AsyncSandbox(SandboxDto):
         toolbox_api: ApiClient,
         sandbox_api: SandboxApi,
         code_toolbox: SandboxCodeToolbox,
-        get_toolbox_base_url: Callable[[str, str], Awaitable[str]],
     ):
         """Initialize a new Sandbox instance.
 
@@ -110,26 +108,21 @@ class AsyncSandbox(SandboxDto):
             toolbox_api (ApiClient): API client for toolbox operations.
             sandbox_api (SandboxApi): API client for Sandbox operations.
             code_toolbox (SandboxCodeToolbox): Language-specific toolbox implementation.
-            get_toolbox_base_url (Callable[[], Awaitable[str]]): Function to get the toolbox base URL.
         """
         super().__init__(**sandbox_dto.model_dump())
         self.__process_sandbox_dto(sandbox_dto)
         self._sandbox_api: SandboxApi = sandbox_api
         self._code_toolbox: SandboxCodeToolbox = code_toolbox
-        # Wrap the toolbox API client to inject the sandbox ID into the resource path and lazy load the base URL
-        self._toolbox_api: AsyncToolboxApiClientProxyLazyBaseUrl = AsyncToolboxApiClientProxyLazyBaseUrl(
-            toolbox_api, self.id, self.target, get_toolbox_base_url
+        # Wrap the toolbox API client to inject the sandbox ID into the resource path
+        self._toolbox_api: ToolboxApiClientProxy[ApiClient] = ToolboxApiClientProxy(
+            toolbox_api, self.id, self.toolbox_proxy_url
         )
 
-        self._fs = AsyncFileSystem(FileSystemApi(self._toolbox_api), self._toolbox_api.load_toolbox_base_url)
+        self._fs = AsyncFileSystem(FileSystemApi(self._toolbox_api))
         self._git = AsyncGit(GitApi(self._toolbox_api))
-        self._process = AsyncProcess(
-            code_toolbox, ProcessApi(self._toolbox_api), self._toolbox_api.load_toolbox_base_url
-        )
+        self._process = AsyncProcess(code_toolbox, ProcessApi(self._toolbox_api))
         self._computer_use = AsyncComputerUse(ComputerUseApi(self._toolbox_api))
-        self._code_interpreter = AsyncCodeInterpreter(
-            InterpreterApi(self._toolbox_api), self._toolbox_api.load_toolbox_base_url
-        )
+        self._code_interpreter = AsyncCodeInterpreter(InterpreterApi(self._toolbox_api))
         self._info_api: InfoApi = InfoApi(self._toolbox_api)
 
     @property
@@ -153,6 +146,7 @@ class AsyncSandbox(SandboxDto):
         return self._code_interpreter
 
     @intercept_errors(message_prefix="Failed to refresh sandbox data: ")
+    @with_instrumentation()
     async def refresh_data(self) -> None:
         """Refreshes the Sandbox data from the API.
 
@@ -168,6 +162,7 @@ class AsyncSandbox(SandboxDto):
         self.__process_sandbox_dto(instance)
 
     @intercept_errors(message_prefix="Failed to get user home directory: ")
+    @with_instrumentation()
     async def get_user_home_dir(self) -> str:
         """Gets the user's home directory path inside the Sandbox.
 
@@ -188,10 +183,12 @@ class AsyncSandbox(SandboxDto):
             "Method is deprecated. Use `get_user_home_dir` instead. This method will be removed in a future version."
         )
     )
+    @with_instrumentation()
     async def get_user_root_dir(self) -> str:
         return await self.get_user_home_dir()
 
     @intercept_errors(message_prefix="Failed to get working directory path: ")
+    @with_instrumentation()
     async def get_work_dir(self) -> str:
         """Gets the working directory path inside the Sandbox.
 
@@ -208,6 +205,7 @@ class AsyncSandbox(SandboxDto):
         response = await self._info_api.get_work_dir()
         return response.dir
 
+    @with_instrumentation()
     def create_lsp_server(
         self, language_id: LspLanguageId | LspLanguageIdLiteral, path_to_project: str
     ) -> AsyncLspServer:
@@ -236,6 +234,7 @@ class AsyncSandbox(SandboxDto):
         )
 
     @intercept_errors(message_prefix="Failed to set labels: ")
+    @with_instrumentation()
     async def set_labels(self, labels: dict[str, str]) -> dict[str, str]:
         """Sets labels for the Sandbox.
 
@@ -261,11 +260,8 @@ class AsyncSandbox(SandboxDto):
         return self.labels
 
     @intercept_errors(message_prefix="Failed to start sandbox: ")
-    @with_timeout(
-        error_message=lambda self, timeout: (
-            f"Sandbox {cast('AsyncSandbox', self).id} failed to start within the {timeout} seconds timeout period"
-        )
-    )
+    @with_timeout()
+    @with_instrumentation()
     async def start(self, timeout: float | None = 60):
         """Starts the Sandbox and waits for it to be ready.
 
@@ -282,18 +278,13 @@ class AsyncSandbox(SandboxDto):
             print("Sandbox started successfully")
             ```
         """
-        start_time = time.time()
-        sandbox = await self._sandbox_api.start_sandbox(self.id, _request_timeout=timeout or None)
+        sandbox = await self._sandbox_api.start_sandbox(self.id, _request_timeout=http_timeout(timeout))
         self.__process_sandbox_dto(sandbox)
-        time_elapsed = time.time() - start_time
-        await self.wait_for_sandbox_start(timeout=max(0.001, timeout - time_elapsed) if timeout else timeout)
+        # This method already handles a timeout, so we don't need to pass one to internal methods
+        await self.wait_for_sandbox_start(timeout=0)
 
     @intercept_errors(message_prefix="Failed to recover sandbox: ")
-    @with_timeout(
-        error_message=lambda self, timeout: (
-            f"Sandbox {cast('AsyncSandbox', self).id} failed to recover within the {timeout} seconds timeout period"
-        )
-    )
+    @with_timeout()
     async def recover(self, timeout: float | None = 60):
         """Recovers the Sandbox from a recoverable error and waits for it to be ready.
 
@@ -310,18 +301,14 @@ class AsyncSandbox(SandboxDto):
             print("Sandbox recovered successfully")
             ```
         """
-        start_time = time.time()
-        sandbox = await self._sandbox_api.recover_sandbox(self.id, _request_timeout=timeout or None)
+        sandbox = await self._sandbox_api.recover_sandbox(self.id, _request_timeout=http_timeout(timeout))
         self.__process_sandbox_dto(sandbox)
-        time_elapsed = time.time() - start_time
-        await self.wait_for_sandbox_start(timeout=max(0.001, timeout - time_elapsed) if timeout else timeout)
+        # This method already handles a timeout, so we don't need to pass one to internal methods
+        await self.wait_for_sandbox_start(timeout=0)
 
     @intercept_errors(message_prefix="Failed to stop sandbox: ")
-    @with_timeout(
-        error_message=lambda self, timeout: (
-            f"Sandbox {cast('AsyncSandbox', self).id} failed to stop within the {timeout} seconds timeout period"
-        )
-    )
+    @with_timeout()
+    @with_instrumentation()
     async def stop(self, timeout: float | None = 60):
         """Stops the Sandbox and waits for it to be fully stopped.
 
@@ -338,13 +325,13 @@ class AsyncSandbox(SandboxDto):
             print("Sandbox stopped successfully")
             ```
         """
-        start_time = time.time()
-        _ = await self._sandbox_api.stop_sandbox(self.id, _request_timeout=timeout or None)
+        _ = await self._sandbox_api.stop_sandbox(self.id, _request_timeout=http_timeout(timeout))
         await self.__refresh_data_safe()
-        time_elapsed = time.time() - start_time
-        await self.wait_for_sandbox_stop(timeout=max(0.001, timeout - time_elapsed) if timeout else timeout)
+        # This method already handles a timeout, so we don't need to pass one to internal methods
+        await self.wait_for_sandbox_stop(timeout=0)
 
     @intercept_errors(message_prefix="Failed to remove sandbox: ")
+    @with_instrumentation()
     async def delete(self, timeout: float | None = 60) -> None:
         """Deletes the Sandbox.
 
@@ -352,16 +339,12 @@ class AsyncSandbox(SandboxDto):
             timeout (float | None): Timeout (in seconds) for sandbox deletion. 0 means no timeout.
                 Default is 60 seconds.
         """
-        _ = await self._sandbox_api.delete_sandbox(self.id, _request_timeout=timeout or None)
+        _ = await self._sandbox_api.delete_sandbox(self.id, _request_timeout=http_timeout(timeout))
         await self.__refresh_data_safe()
 
     @intercept_errors(message_prefix="Failure during waiting for sandbox to start: ")
-    @with_timeout(
-        error_message=lambda self, timeout: (
-            f"Sandbox {cast('AsyncSandbox', self).id} failed to "
-            f"become ready within the {timeout} seconds timeout period"
-        )
-    )
+    @with_timeout()
+    @with_instrumentation()
     async def wait_for_sandbox_start(
         self,
         timeout: float | None = 60,  # pylint: disable=unused-argument # pyright: ignore[reportUnusedParameter]
@@ -390,12 +373,8 @@ class AsyncSandbox(SandboxDto):
             await asyncio.sleep(0.1)  # Wait 100ms between checks
 
     @intercept_errors(message_prefix="Failure during waiting for sandbox to stop: ")
-    @with_timeout(
-        error_message=lambda self, timeout: (
-            f"Sandbox {cast('AsyncSandbox', self).id} failed to "
-            f"become stopped within the {timeout} seconds timeout period"
-        )
-    )
+    @with_timeout()
+    @with_instrumentation()
     async def wait_for_sandbox_stop(
         self,
         timeout: float | None = 60,  # pylint: disable=unused-argument # pyright: ignore[reportUnusedParameter]
@@ -428,6 +407,7 @@ class AsyncSandbox(SandboxDto):
             await asyncio.sleep(0.1)  # Wait 100ms between checks
 
     @intercept_errors(message_prefix="Failed to set auto-stop interval: ")
+    @with_instrumentation()
     async def set_autostop_interval(self, interval: int) -> None:
         """Sets the auto-stop interval for the Sandbox.
 
@@ -450,13 +430,14 @@ class AsyncSandbox(SandboxDto):
             sandbox.set_autostop_interval(0)
             ```
         """
-        if not interval or interval < 0:
+        if interval < 0:
             raise DaytonaError("Auto-stop interval must be a non-negative integer")
 
         _ = await self._sandbox_api.set_autostop_interval(self.id, interval)
         self.auto_stop_interval = interval
 
     @intercept_errors(message_prefix="Failed to set auto-archive interval: ")
+    @with_instrumentation()
     async def set_auto_archive_interval(self, interval: int) -> None:
         """Sets the auto-archive interval for the Sandbox.
 
@@ -477,13 +458,14 @@ class AsyncSandbox(SandboxDto):
             sandbox.set_auto_archive_interval(0)
             ```
         """
-        if not interval or interval < 0:
+        if interval < 0:
             raise DaytonaError("Auto-archive interval must be a non-negative integer")
 
         _ = await self._sandbox_api.set_auto_archive_interval(self.id, interval)
         self.auto_archive_interval = interval
 
     @intercept_errors(message_prefix="Failed to set auto-delete interval: ")
+    @with_instrumentation()
     async def set_auto_delete_interval(self, interval: int) -> None:
         """Sets the auto-delete interval for the Sandbox.
 
@@ -508,6 +490,7 @@ class AsyncSandbox(SandboxDto):
         self.auto_delete_interval = interval
 
     @intercept_errors(message_prefix="Failed to get preview link: ")
+    @with_instrumentation()
     async def get_preview_link(self, port: int) -> PortPreviewUrl:
         """Retrieves the preview link for the sandbox at the specified port. If the port is closed,
         it will be opened automatically. For private sandboxes, a token is included to grant access
@@ -554,6 +537,7 @@ class AsyncSandbox(SandboxDto):
         await self._sandbox_api.expire_signed_port_preview_url(self.id, port, token)
 
     @intercept_errors(message_prefix="Failed to archive sandbox: ")
+    @with_instrumentation()
     async def archive(self) -> None:
         """Archives the sandbox, making it inactive and preserving its state. When sandboxes are
         archived, the entire filesystem state is moved to cost-effective object storage, making it
@@ -564,7 +548,79 @@ class AsyncSandbox(SandboxDto):
         _ = await self._sandbox_api.archive_sandbox(self.id)
         await self.refresh_data()
 
+    @intercept_errors(message_prefix="Failed to resize sandbox: ")
+    @with_timeout()
+    @with_instrumentation()
+    async def resize(self, resources: Resources, timeout: float | None = 60) -> None:
+        """Resizes the Sandbox resources.
+
+        Changes the CPU, memory, or disk allocation for the Sandbox. Hot resize (on running
+        sandbox) only allows CPU/memory increases. Disk resize requires a stopped sandbox.
+
+        Args:
+            resources (Resources): New resource configuration. Only specified fields will be updated.
+                - cpu: Number of CPU cores (minimum: 1). For hot resize, can only be increased.
+                - memory: Memory in GiB (minimum: 1). For hot resize, can only be increased.
+                - disk: Disk space in GiB (can only be increased, requires stopped sandbox).
+            timeout (Optional[float]): Timeout (in seconds) for the resize operation. 0 means no timeout.
+                Default is 60 seconds.
+
+        Raises:
+            DaytonaError: If hot resize constraints are violated (CPU/memory decrease on running sandbox).
+            DaytonaError: If disk resize attempted on running sandbox.
+            DaytonaError: If disk size decrease is attempted.
+            DaytonaError: If resize operation times out.
+            DaytonaError: If no resource changes are specified.
+
+        Example:
+            ```python
+            # Increase CPU/memory on running sandbox (hot resize)
+            await sandbox.resize(Resources(cpu=4, memory=8))
+
+            # Change disk (sandbox must be stopped)
+            await sandbox.stop()
+            await sandbox.resize(Resources(cpu=2, memory=4, disk=30))
+            ```
+        """
+        resize_request = ResizeSandbox(
+            cpu=resources.cpu,
+            memory=resources.memory,
+            disk=resources.disk,
+        )
+        sandbox = await self._sandbox_api.resize_sandbox(self.id, resize_request, _request_timeout=timeout or None)
+        self.__process_sandbox_dto(sandbox)
+        await self.wait_for_resize_complete(timeout=0)
+
+    @intercept_errors(message_prefix="Failure during waiting for resize to complete: ")
+    @with_timeout()
+    @with_instrumentation()
+    async def wait_for_resize_complete(
+        self,
+        timeout: float | None = 60,  # pylint: disable=unused-argument # pyright: ignore[reportUnusedParameter]
+    ) -> None:
+        """Waits for the Sandbox resize operation to complete. Polls the Sandbox status until
+        the state is no longer 'resizing'.
+
+        Args:
+            timeout (Optional[float]): Maximum time to wait in seconds. 0 means no timeout. Default is 60 seconds.
+
+        Raises:
+            DaytonaError: If timeout is negative. If resize operation times out.
+        """
+        while self.state == "resizing":
+            await self.refresh_data()
+
+            if self.state != "resizing":
+                return
+
+            if self.state in ["error", "build_failed"]:
+                err_msg = f"Sandbox {self.id} resize failed with state: {self.state}, error reason: {self.error_reason}"
+                raise DaytonaError(err_msg)
+
+            await asyncio.sleep(0.1)  # Wait 100ms between checks
+
     @intercept_errors(message_prefix="Failed to create SSH access: ")
+    @with_instrumentation()
     async def create_ssh_access(self, expires_in_minutes: int | None = None) -> SshAccessDto:
         """Creates an SSH access token for the sandbox.
 
@@ -574,6 +630,7 @@ class AsyncSandbox(SandboxDto):
         return await self._sandbox_api.create_ssh_access(self.id, expires_in_minutes=expires_in_minutes)
 
     @intercept_errors(message_prefix="Failed to revoke SSH access: ")
+    @with_instrumentation()
     async def revoke_ssh_access(self, token: str) -> None:
         """Revokes an SSH access token for the sandbox.
 
@@ -583,6 +640,7 @@ class AsyncSandbox(SandboxDto):
         _ = await self._sandbox_api.revoke_ssh_access(self.id, token)
 
     @intercept_errors(message_prefix="Failed to validate SSH access: ")
+    @with_instrumentation()
     async def validate_ssh_access(self, token: str) -> SshAccessValidationDto:
         """Validates an SSH access token for the sandbox.
 
@@ -633,6 +691,7 @@ class AsyncSandbox(SandboxDto):
         self.updated_at: str | None = sandbox_dto.updated_at
         self.network_block_all: bool = sandbox_dto.network_block_all
         self.network_allow_list: str | None = sandbox_dto.network_allow_list
+        self.toolbox_proxy_url: str = sandbox_dto.toolbox_proxy_url
 
     async def __refresh_data_safe(self) -> None:
         """Refreshes the Sandbox data from the API, but does not throw an error if the sandbox has been deleted.

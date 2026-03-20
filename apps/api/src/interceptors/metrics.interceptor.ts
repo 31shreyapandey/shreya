@@ -157,6 +157,9 @@ export class MetricsInterceptor implements NestInterceptor, OnApplicationShutdow
           case '/api/workspace/:workspaceId/stop':
             this.captureStopSandbox(props, request.params.sandboxIdOrName || request.params.workspaceId)
             break
+          case '/api/sandbox/:sandboxIdOrName/resize':
+            this.captureResizeSandbox(props, request.params.sandboxIdOrName, request.body)
+            break
           case '/api/sandbox/:sandboxIdOrName/archive':
           case '/api/workspace/:workspaceId/archive':
             this.captureArchiveSandbox(props, request.params.sandboxIdOrName || request.params.workspaceId)
@@ -269,6 +272,10 @@ export class MetricsInterceptor implements NestInterceptor, OnApplicationShutdow
               request.params.invitationId,
               request.body,
             )
+            break
+          case '/api/organizations/:organizationId/experimental-config':
+            this.captureUpdateOrganizationExperimentalConfig(props, request.body)
+            break
         }
         break
       case 'PATCH':
@@ -607,6 +614,19 @@ export class MetricsInterceptor implements NestInterceptor, OnApplicationShutdow
     })
   }
 
+  private captureResizeSandbox(
+    props: CommonCaptureProps,
+    sandboxId: string,
+    body: { cpu?: number; memory?: number; disk?: number },
+  ) {
+    this.capture('api_sandbox_resized', props, 'api_sandbox_resize_failed', {
+      sandbox_id: sandboxId,
+      cpu: body?.cpu,
+      memory: body?.memory,
+      disk: body?.disk,
+    })
+  }
+
   private captureArchiveSandbox(props: CommonCaptureProps, sandboxId: string) {
     this.capture('api_sandbox_archived', props, 'api_sandbox_archive_failed', {
       sandbox_id: sandboxId,
@@ -850,6 +870,21 @@ export class MetricsInterceptor implements NestInterceptor, OnApplicationShutdow
     this.capture('api_volume_deleted', props, 'api_volume_deletion_failed', {
       volume_id: volumeId,
     })
+  }
+
+  private captureUpdateOrganizationExperimentalConfig(
+    props: CommonCaptureProps,
+    experimentalConfig: Record<string, any> | null,
+  ) {
+    this.capture(
+      'api_organization_experimental_config_updated',
+      props,
+      'api_organization_experimental_config_update_failed',
+      {
+        experimental_config_empty: !experimentalConfig,
+        experimental_config_otel_set: !!experimentalConfig?.otel,
+      },
+    )
   }
 
   private captureToolboxCommand(

@@ -5,6 +5,7 @@ package pty
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sync"
@@ -22,6 +23,7 @@ const (
 
 // PTYController handles PTY-related HTTP endpoints
 type PTYController struct {
+	logger  *slog.Logger
 	workDir string
 }
 
@@ -34,12 +36,15 @@ type PTYManager struct {
 type wsClient struct {
 	id        string
 	conn      *websocket.Conn
-	send      chan []byte // outbound queue for this client (PTY -> WS)
+	send      chan []byte   // outbound queue for this client (PTY -> WS)
+	done      chan struct{} // closed when the client is shutting down
 	closeOnce sync.Once
 }
 
 // PTYSession represents a single PTY session with multi-client support
 type PTYSession struct {
+	logger *slog.Logger
+
 	info PTYSessionInfo
 
 	cmd    *exec.Cmd
